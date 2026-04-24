@@ -1,23 +1,125 @@
-# beril-atlas-skill-draft
+# beril-atlas-skill
 
-**Transient staging directory.** Contents here are drafts being prepared for the
-`ArkinLaboratory/beril-atlas-skill` private repo. Once the repo is initialized (Task #9
-in the spike TaskList), this directory's contents form the initial commit and
-this staging directory can be archived.
+BERIL Atlas — a read-only retrofit analyzer for a local BERIL deployment,
+distributed as a Claude Code skill plus a Python engine. Scans the BERIL
+skill pack, project corpus, and workspace memory; produces tabular exports,
+an interactive HTML dashboard, drift-review markdown, and a recommendations
+writeup grounded in the warehouse rows.
 
-## Contents
+**Status:** v0.1, private alpha.
 
-- `pyproject.toml` — draft Python package configuration (Task #2 output).
+## Install
 
-## Why this is NOT a planning document
+```bash
+pipx install git+ssh://git@github.com/ArkinLaboratory/beril-atlas-skill.git
+```
 
-Per `CLAUDE.md` we don't create new planning docs. This directory holds
-*executable artifacts* (pyproject.toml, eventually source, tests, README) that
-will become a repo. Reviewing a pyproject.toml inline in a week-note is worse
-than reviewing the real file; hence this staging folder.
+Note the explicit `git@` — `git+ssh://` URLs require it for GitHub.
 
-## Provenance
+If you get `Permission denied (publickey)` and your SSH key has a
+passphrase, the agent needs the key loaded first:
 
-Initialized 2026-04-24 under Task #2 of the beril-atlas-skill packaging work.
-See `spike/week-notes/2026-04-24-beril-atlas-packaging-bucket-audit.md` for the
-bucket-assignment audit that preceded this.
+```bash
+ssh-add ~/.ssh/id_ed25519
+```
+
+Then retry the install.
+
+**Windows**: prerequisite is `python -m pip install --user pipx; python -m pipx ensurepath`.
+
+## Quickstart
+
+After install, point it at a BERIL checkout:
+
+```bash
+cd <your BERIL deployment>
+beril-atlas install-skill .
+```
+
+This populates `<BERIL>/.claude/skills/beril-atlas/` with shipped skill
+files (SKILL.md, slash command, prompts, references, vocab-shipped) and
+creates writable `vocab-local/`, `state/`, `contrib/` directories that
+are preserved across upgrades.
+
+Then inside Claude Code in that BERIL directory:
+
+```
+/beril-atlas-configure
+```
+
+This walks you through provider selection (CBORG only in v0.1), appends
+the atlas configuration template to `BERIL_ROOT/.env`, and runs a smoke
+test against your provider.
+
+Once configured, run scans via:
+
+```bash
+beril-atlas scan
+```
+
+## What this does
+
+- **L1**: deterministic inventory — projects, revisions, authors, sections,
+  notebooks, declared cross-project citations.
+- **L2**: LLM extraction over canonical doc sections — organisms, methods,
+  databases, journals, functions, question-types, conclusions, drift
+  candidates. CBORG provider in v0.1.
+- **L3**: DuckDB warehouse with 35+ SQL views; CSV + multi-sheet XLSX
+  exports.
+- **L4**: composite sophistication scoring on 5 axes (depth, breadth,
+  influence, integration, self-follow-on) with cross-author edge
+  classification.
+- **L5**: research-line detection via weakly-connected components on the
+  declared-citation graph plus topic-overlap edges; Louvain
+  sub-clustering for lines ≥5 members.
+- **L6**: LLM synthesis of next-direction recommendations with evidence
+  trace.
+- **L7**: backward-looking findings synthesis describing what the current
+  warehouse reveals.
+- **HTML dashboard**: 8-act narrative dashboard rendered to a single
+  self-contained HTML file you can share or browse offline.
+
+## Constraints
+
+- **Read-only on the corpus.** The atlas writes nothing inside any
+  scanned project, writes no `.auto-memory/` entries anywhere, and
+  excludes its own outputs from future scans. See `references/dashboard-caveats.md`
+  §contamination.
+- **No external enrichment.** PubMed, ORCID, GO, and similar services
+  are not contacted. Citations are extracted as edges only.
+- **Single-user local.** Multi-tenant deployment is not exercised.
+
+## Documentation
+
+- `LAYOUT.md` — package structure, CLI surface, BERIL_ROOT discovery.
+- `CONFIGURE.md` — `/beril-atlas-configure` slash command + CLI spec.
+- `CONTRIBUTION.md` — vocab + methodology contribution flow with leak
+  tests for friends submitting drift-review promotions.
+
+In-skill (after `install-skill`):
+- `<BERIL>/.claude/skills/beril-atlas/references/design-note.md` —
+  authoritative architectural spec.
+- `<BERIL>/.claude/skills/beril-atlas/references/dashboard-caveats.md` —
+  the risk register every dashboard panel cites.
+
+## Troubleshooting
+
+**`pipx install` fails with `Permission denied (publickey)`**:
+You probably have a passphrase-protected SSH key not loaded in the
+agent. Run `ssh-add ~/.ssh/id_ed25519` (enter passphrase once), then
+retry. See SSH-agent notes in this section above.
+
+**`beril-atlas` prints "could not find BERIL_ROOT"**:
+The CLI walks up from cwd looking for a directory with `.env`,
+`.claude/skills/`, and at least one BERIL-core skill (submit, berdl, or
+suggest-research). If yours is in an unusual spot, pass `--beril-root`
+explicitly or set `BERIL_ROOT` env var.
+
+**Smoke test fails with `error_class: auth`**:
+Your `CBORG_API_KEY` in `BERIL_ROOT/.env` is invalid or unauthorized
+for the CBORG endpoint. Verify the key, then re-run
+`/beril-atlas-configure`.
+
+## License
+
+MIT. See `LICENSE`.
