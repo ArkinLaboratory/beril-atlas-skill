@@ -1,0 +1,167 @@
+# Organism vocabulary — v1
+# Calibrated from a reference BERIL corpus; extend via vocab-local/ for deployment-specific organisms.
+# Seeded from extraction across 6 representative projects + manual additions
+# for organisms known to be prominent elsewhere in the corpus (ADP1, DvH).
+#
+# Schema per entry:
+#   canonical: the primary display name (binomial + strain where applicable)
+#   aliases: normalized via _match_rules.v1.yaml (case/dash/underscore invariant)
+#   taxonomy: broad phylogenetic context for grouping
+#   parent_species: for strain-level entries, the parent species canonical
+#   ncbi_tax_id: optional, cached only — no live lookups
+#   notes: any disambiguation guidance
+#   source_evidence: where Phase 0 extraction saw this entity
+#
+# Out of scope for this vocab (explicit non-seeding):
+#   - Individual genes (extracted by pattern + context, not dictionary)
+#   - Gene functional classes (separate vocab: functional-classes.v1.yaml, deferred)
+#
+# 2-letter abbreviations (PA, FB, MR, etc.) are NOT primary canonical IDs.
+# They appear as aliases subject to the doc-local resolution rule in _match_rules.v1.yaml.
+
+_meta:
+  vocab_name: organisms
+  version: 1
+  created: 2026-04-18
+  entry_count: 24
+  out_of_scope:
+    - individual genes (pattern + context)
+    - functional classes (separate vocab)
+
+entries:
+
+  # ==== γ-proteobacteria ====
+
+  - canonical: "Acinetobacter baylyi ADP1"
+    aliases: ["A. baylyi ADP1", "ADP1", "Acinetobacter baylyi strain ADP1"]
+    taxonomy: "γ-proteobacteria / Moraxellaceae / Acinetobacter"
+    parent_species: "Acinetobacter baylyi"
+    notes: "Model organism for aromatic catabolism and essentiality; prominent across ADP1-family projects"
+
+  - canonical: "Pseudomonas aeruginosa PA14"
+    aliases: ["PA14", "P. aeruginosa PA14"]
+    taxonomy: "γ-proteobacteria / Pseudomonadaceae / Pseudomonas"
+    parent_species: "Pseudomonas aeruginosa"
+    notes: "Clinical/lab strain; ExoU+, Pel-only virulence profile; ladS mutant"
+
+  - canonical: "Pseudomonas aeruginosa PAO1"
+    aliases: ["PAO1", "P. aeruginosa PAO1"]
+    taxonomy: "γ-proteobacteria / Pseudomonadaceae / Pseudomonas"
+    parent_species: "Pseudomonas aeruginosa"
+
+  - canonical: "Pseudomonas aeruginosa"
+    aliases: ["P. aeruginosa"]
+    taxonomy: "γ-proteobacteria / Pseudomonadaceae / Pseudomonas"
+    notes: |
+      "PA" 2-letter alias is high-ambiguity (also matches protein names, other
+      contexts). Apply doc-local resolution rule — tag only when PA14 or PAO1
+      already mentioned or when "aeruginosa" appears in context.
+    doc_local_aliases: ["PA"]
+
+  - canonical: "Pseudomonas fluorescens FW300-N2C3"
+    aliases: ["FW300-N2C3", "N2C3"]
+    taxonomy: "γ-proteobacteria / Pseudomonadaceae / Pseudomonas"
+    parent_species: "Pseudomonas fluorescens"
+    notes: "ENIGMA groundwater isolate"
+
+  - canonical: "Pseudomonas fluorescens FW300-N2E3"
+    aliases: ["FW300-N2E3", "N2E3"]
+    taxonomy: "γ-proteobacteria / Pseudomonadaceae / Pseudomonas"
+    parent_species: "Pseudomonas fluorescens"
+    notes: "ENIGMA groundwater isolate (fw300_metabolic_consistency project)"
+
+  - canonical: "Escherichia coli K-12"
+    aliases: ["E. coli K-12", "K-12", "K12"]
+    taxonomy: "γ-proteobacteria / Enterobacteriaceae / Escherichia"
+    parent_species: "Escherichia coli"
+
+  - canonical: "Shewanella oneidensis MR-1"
+    aliases: ["S. oneidensis MR-1", "MR-1"]
+    taxonomy: "γ-proteobacteria / Shewanellaceae / Shewanella"
+    parent_species: "Shewanella oneidensis"
+    notes: "bare "MR" is NOT a valid alias — hyphen mandatory (prevents MR-1 being miscounted as bare MR)"
+
+  # ==== Other prominent bacteria ====
+
+  - canonical: "Desulfovibrio vulgaris Hildenborough"
+    aliases: ["D. vulgaris Hildenborough", "DvH", "Desulfovibrio vulgaris str. Hildenborough"]
+    taxonomy: "δ-proteobacteria / Desulfovibrionaceae / Desulfovibrio"
+    parent_species: "Desulfovibrio vulgaris"
+    notes: "Primary ENIGMA model organism; not heavily in sampled trio but dominant elsewhere in corpus"
+
+  - canonical: "Bacteroides thetaiotaomicron"
+    aliases: ["B. thetaiotaomicron", "B. theta"]
+    taxonomy: "Bacteroidetes / Bacteroidaceae / Bacteroides"
+
+  - canonical: "Sinorhizobium meliloti"
+    aliases: ["S. meliloti"]
+    taxonomy: "α-proteobacteria / Rhizobiaceae / Sinorhizobium"
+
+  - canonical: "Streptomyces coelicolor"
+    aliases: ["S. coelicolor"]
+    taxonomy: "Actinobacteria / Streptomycetaceae / Streptomyces"
+
+  # ==== Oral / clinical-microbiome organisms ====
+
+  - canonical: "Rothia dentocariosa"
+    aliases: ["R. dentocariosa"]
+    taxonomy: "Actinobacteria / Micrococcaceae / Rothia"
+    notes: "Candidate probiotic for CF formulation"
+
+  - canonical: "Neisseria mucosa"
+    aliases: ["N. mucosa"]
+    taxonomy: "β-proteobacteria / Neisseriaceae / Neisseria"
+
+  - canonical: "Streptococcus salivarius"
+    aliases: ["S. salivarius"]
+    taxonomy: "Firmicutes / Streptococcaceae / Streptococcus"
+
+  - canonical: "Micrococcus luteus"
+    aliases: ["M. luteus"]
+    taxonomy: "Actinobacteria / Micrococcaceae / Micrococcus"
+
+  - canonical: "Gemella sanguinis"
+    aliases: ["G. sanguinis"]
+    taxonomy: "Firmicutes / Bacillales / Gemella"
+
+  # ==== Environmental / ENIGMA genera ====
+
+  - canonical: "Rhodanobacter"
+    aliases: []
+    taxonomy: "γ-proteobacteria / Rhodanobacteraceae"
+    kind: genus
+    notes: "Prominent in ENIGMA Oak Ridge groundwater"
+
+  - canonical: "Sideroxydans"
+    aliases: []
+    taxonomy: "β-proteobacteria / Gallionellaceae"
+    kind: genus
+
+  - canonical: "Anaeromyxobacter"
+    aliases: []
+    taxonomy: "δ-proteobacteria / Anaeromyxobacteraceae"
+    kind: genus
+
+  - canonical: "Gallionella"
+    aliases: []
+    taxonomy: "β-proteobacteria / Gallionellaceae"
+    kind: genus
+
+  - canonical: "Arcobacter"
+    aliases: []
+    taxonomy: "ε-proteobacteria / Arcobacteraceae"
+    kind: genus
+
+  # ==== Collection-level entities ====
+
+  - canonical: "Fitness Browser 48-organism set"
+    aliases: ["FB-48", "Fitness Browser organisms", "FB organisms"]
+    kind: organism_collection
+    notes: "The ~48 bacteria with RB-TnSeq fitness compendia in FitnessBrowser; treated as a collection, not a species"
+
+  - canonical: "BERDL pangenome 27K-species set"
+    aliases: ["BERDL pangenome", "27K-species pangenome", "293K-genome pangenome"]
+    kind: organism_collection
+    notes: "The ~27,690 species / ~293K genomes in the BERDL pangenome table"
+
+# End of organisms.v1.yaml

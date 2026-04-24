@@ -1,0 +1,315 @@
+# Databases vocabulary — v1
+# Captures BERDL tables (with database + tenant) and external databases used by the corpus.
+#
+# Schema per entry:
+#   canonical: display name (for BERDL: "<database>.<table>" notation)
+#   aliases: variations
+#   kind: berdl_table | external_db | berdl_tenant_namespace | tool_or_endpoint
+#   database: parent BERDL database / namespace (for BERDL tables)
+#   tenant: tenant ownership (for BERDL tables; default tenant if globally readable)
+#   notes: provenance, access notes
+#   source_evidence: where Phase 0 saw this
+#
+# Tenant info per BERDL governance memory: 4 RBAC roles, 3 namespace categories.
+# Most kescience_* tables are public-readable; nmdc_arkin is a lab-specific BERDL tenant.
+
+_meta:
+  vocab_name: databases
+  version: 1
+  created: 2026-04-18
+  entry_count: 38
+  schema_note: "BERDL tables use canonical = <database>.<table> to capture DB+tenant metadata"
+
+entries:
+
+  # ==== BERDL tables — kescience namespace (public-readable canonical data) ====
+
+  - canonical: "kescience.fitnessbrowser"
+    aliases: ["kescience_fitnessbrowser", "fitnessbrowser table"]
+    kind: berdl_table
+    database: kescience
+    tenant: kescience-public
+    notes: "RB-TnSeq fitness compendium mirrored into BERDL"
+
+  - canonical: "kescience.paperblast"
+    aliases: ["kescience_paperblast", "paperblast collection"]
+    kind: berdl_table
+    database: kescience
+    tenant: kescience-public
+    notes: "Literature search collection"
+
+  - canonical: "kescience.webofmicrobes"
+    aliases: ["kescience_webofmicrobes"]
+    kind: berdl_table
+    database: kescience
+    tenant: kescience-public
+    notes: "Web of Microbes exometabolomics collection"
+
+  - canonical: "kescience.pubmed"
+    aliases: ["kescience_pubmed", "pubmed collection"]
+    kind: berdl_table
+    database: kescience
+    tenant: kescience-public
+
+  # ==== BERDL tables — kbase_ke namespace (KBase Knowledge Engine) ====
+
+  - canonical: "kbase_ke.pangenome"
+    aliases: ["kbase_ke_pangenome"]
+    kind: berdl_table
+    database: kbase_ke
+    tenant: kbase-public
+    notes: "27,690-species pangenome with 293K genomes"
+
+  # ==== BERDL tables — core/shared (often unprefixed in queries; default schema) ====
+
+  - canonical: "berdl.gene"
+    aliases: ["gene"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "Core gene table"
+
+  - canonical: "berdl.genome"
+    aliases: ["genome"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.organism"
+    aliases: ["organism"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.experiment"
+    aliases: ["experiment"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.gene_cluster"
+    aliases: ["gene_cluster"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.gene_phenotypes"
+    aliases: ["gene_phenotypes"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.specog"
+    aliases: ["specog"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "Species-COG specificity table"
+
+  - canonical: "berdl.specificphenotype"
+    aliases: ["specificphenotype"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.cofit"
+    aliases: ["cofit"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "Cofitness correlations"
+
+  - canonical: "berdl.genefitness"
+    aliases: ["genefitness"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.genedomain"
+    aliases: ["genedomain"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "Pfam domain annotations"
+
+  - canonical: "berdl.gapmind_pathways"
+    aliases: ["gapmind_pathways"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.eggnog_mapper_annotations"
+    aliases: ["eggnog_mapper_annotations"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.bakta_amr"
+    aliases: ["bakta_amr"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.bakta_annotations"
+    aliases: ["bakta_annotations"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.essentiality_lb"
+    aliases: ["essentiality_lb"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "Rich-media (LB) essentiality calls"
+
+  - canonical: "berdl.essentiality_minimal"
+    aliases: ["essentiality_minimal"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "Minimal-media essentiality calls"
+
+  # ==== BERDL tables — GTDB taxonomy ====
+
+  - canonical: "berdl.gtdb_metadata"
+    aliases: ["gtdb_metadata"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.gtdb_species_clade"
+    aliases: ["gtdb_species_clade"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.gtdb_taxonomy_r214v1"
+    aliases: ["gtdb_taxonomy_r214v1"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "GTDB release 214 v1"
+
+  # ==== BERDL tables — phenotype/trait facts (BacDive-derived) ====
+
+  - canonical: "berdl.fact_carbon_utilization"
+    aliases: ["fact_carbon_utilization"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.fact_pairwise_interaction"
+    aliases: ["fact_pairwise_interaction"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.trait_features"
+    aliases: ["trait_features"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.taxonomy_features"
+    aliases: ["taxonomy_features"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.abiotic_features"
+    aliases: ["abiotic_features"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.taxonomy_dim"
+    aliases: ["taxonomy_dim"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  # ==== BERDL tables — environmental data ====
+
+  - canonical: "berdl.ncbi_env"
+    aliases: ["ncbi_env"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+    notes: "NCBI environmental sample metadata"
+
+  - canonical: "berdl.alphaearth_embeddings_all_years"
+    aliases: ["alphaearth_embeddings_all_years"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: berdl-public
+
+  - canonical: "berdl.enigma_coral"
+    aliases: ["enigma_coral"]
+    kind: berdl_table
+    database: berdl_core
+    tenant: enigma
+    notes: "ENIGMA CORAL site data"
+
+  # ==== BERDL tables — tenant namespaces (non-public) ====
+
+  - canonical: "nmdc_arkin (tenant namespace)"
+    aliases: ["nmdc_arkin"]
+    kind: berdl_tenant_namespace
+    database: nmdc
+    tenant: arkin
+    notes: "Lab-specific NMDC-derived BERDL tenant"
+
+  # ==== External databases (queried but not in BERDL) ====
+
+  - canonical: "NCBI"
+    aliases: ["NCBI"]
+    kind: external_db
+    notes: "Sequences, taxonomy"
+
+  - canonical: "KEGG"
+    aliases: ["KEGG"]
+    kind: external_db
+    notes: "Pathways, orthology"
+
+  - canonical: "NMDC"
+    aliases: ["NMDC", "National Microbiome Data Collaborative"]
+    kind: external_db
+
+  - canonical: "GTDB"
+    aliases: ["GTDB", "Genome Taxonomy Database"]
+    kind: external_db
+
+  - canonical: "eggNOG"
+    aliases: ["eggNOG", "EggNOG"]
+    kind: external_db
+
+  - canonical: "BacDive"
+    aliases: ["BacDive"]
+    kind: external_db
+    notes: "Bacterial Diversity Metadatabase"
+
+  - canonical: "PROTECT clinical isolate collection"
+    aliases: ["PROTECT", "PROTECT PA genomes"]
+    kind: external_db
+    notes: "643 PA isolates from CF lung samples"
+
+  - canonical: "FDA GRAS database"
+    aliases: ["FDA", "FDA-safe", "Generally Recognized as Safe"]
+    kind: external_db
+    notes: "Used for safety filtering in applied / clinical projects; CF alias is high-ambiguity"
+    doc_local_aliases: ["FDA"]
+
+  - canonical: "CARD AMR database"
+    aliases: ["CARD"]
+    kind: external_db
+    notes: "Comprehensive Antibiotic Resistance Database"
+
+  # ==== Tools / endpoints (not databases per se) ====
+
+  - canonical: "berdl_notebook_utils"
+    aliases: ["berdl_notebook_utils"]
+    kind: tool_or_endpoint
+    notes: "BERIL Python helper for BERDL access"
+
+# End of databases.v1.yaml

@@ -1,0 +1,285 @@
+# Functions vocabulary — v1
+# Seed covers pathway / biological-process / regulatory-category canonicals
+# relevant to the BERIL corpus (microbial genomics, fitness, AMR, metabolism).
+#
+# This vocab targets "what biological function is being investigated?" — NOT
+# the methods used to study it (that's methods/), NOT the organisms involved
+# (that's organisms/). Functions are the subject of investigation in the
+# abstract sense: what process, pathway, or regulatory system the science is
+# illuminating.
+#
+# Schema per entry:
+#   canonical: the function name (prefer widely-recognized terminology)
+#   aliases: variant spellings / abbreviations
+#   taxonomy_hint: one of {pathway, process, regulatory, cellular_component,
+#                           gene_category, phenotype}
+#   parent: optional parent category for hierarchy (e.g., "glycolysis" has
+#           parent "central metabolism")
+#
+# This vocab is designed to grow via drift-candidate promotion. The seed
+# aims for ~40-50 entries covering the categories we know BERIL projects
+# investigate; real corpus analysis will surface the rest.
+
+_meta:
+  vocab_name: functions
+  version: 1
+  created: 2026-04-19
+  entry_count: 42
+
+entries:
+
+  # ─────────────────────────────────────────────────────────────────
+  # METABOLISM — CENTRAL PATHWAYS
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "glycolysis"
+    aliases: ["Embden-Meyerhof-Parnas pathway", "EMP pathway"]
+    taxonomy_hint: pathway
+    parent: "central carbon metabolism"
+
+  - canonical: "TCA cycle"
+    aliases: ["citric acid cycle", "tricarboxylic acid cycle", "Krebs cycle"]
+    taxonomy_hint: pathway
+    parent: "central carbon metabolism"
+
+  - canonical: "pentose phosphate pathway"
+    aliases: ["PPP", "hexose monophosphate shunt"]
+    taxonomy_hint: pathway
+    parent: "central carbon metabolism"
+
+  - canonical: "gluconeogenesis"
+    aliases: []
+    taxonomy_hint: pathway
+    parent: "central carbon metabolism"
+
+  - canonical: "oxidative phosphorylation"
+    aliases: ["OXPHOS", "electron transport chain"]
+    taxonomy_hint: pathway
+    parent: "energy metabolism"
+
+  - canonical: "fermentation"
+    aliases: ["anaerobic fermentation"]
+    taxonomy_hint: process
+    parent: "energy metabolism"
+
+  # ─────────────────────────────────────────────────────────────────
+  # BIOSYNTHESIS
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "amino acid biosynthesis"
+    aliases: ["amino acid synthesis"]
+    taxonomy_hint: process
+    parent: "biosynthesis"
+
+  - canonical: "nucleotide biosynthesis"
+    aliases: ["purine biosynthesis", "pyrimidine biosynthesis"]
+    taxonomy_hint: process
+    parent: "biosynthesis"
+
+  - canonical: "fatty acid biosynthesis"
+    aliases: ["FA biosynthesis", "lipid biosynthesis"]
+    taxonomy_hint: process
+    parent: "biosynthesis"
+
+  - canonical: "cofactor biosynthesis"
+    aliases: ["vitamin biosynthesis", "coenzyme biosynthesis"]
+    taxonomy_hint: process
+    parent: "biosynthesis"
+
+  - canonical: "cell wall biosynthesis"
+    aliases: ["peptidoglycan biosynthesis", "murein biosynthesis"]
+    taxonomy_hint: process
+    parent: "biosynthesis"
+
+  - canonical: "polyhydroxybutyrate biosynthesis"
+    aliases: ["PHB biosynthesis", "PHA biosynthesis"]
+    taxonomy_hint: pathway
+    parent: "biosynthesis"
+
+  # ─────────────────────────────────────────────────────────────────
+  # CATABOLISM / DEGRADATION
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "aromatic compound catabolism"
+    aliases: ["aromatic catabolism", "aromatic degradation"]
+    taxonomy_hint: process
+    parent: "catabolism"
+
+  - canonical: "amino acid catabolism"
+    aliases: ["amino acid degradation"]
+    taxonomy_hint: process
+    parent: "catabolism"
+
+  # ─────────────────────────────────────────────────────────────────
+  # TRANSPORT
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "metal transport"
+    aliases: ["metal uptake", "metal homeostasis", "metal ion transport"]
+    taxonomy_hint: process
+    parent: "transport"
+
+  - canonical: "amino acid transport"
+    aliases: ["amino acid uptake"]
+    taxonomy_hint: process
+    parent: "transport"
+
+  - canonical: "drug efflux"
+    aliases: ["efflux pump activity", "antibiotic efflux"]
+    taxonomy_hint: process
+    parent: "transport"
+
+  - canonical: "sugar transport"
+    aliases: ["carbohydrate transport"]
+    taxonomy_hint: process
+    parent: "transport"
+
+  # ─────────────────────────────────────────────────────────────────
+  # STRESS RESPONSE
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "oxidative stress response"
+    aliases: ["ROS response", "oxidative stress"]
+    taxonomy_hint: process
+    parent: "stress response"
+
+  - canonical: "heat shock response"
+    aliases: ["heat shock"]
+    taxonomy_hint: process
+    parent: "stress response"
+
+  - canonical: "osmotic stress response"
+    aliases: ["osmotic stress", "osmoadaptation"]
+    taxonomy_hint: process
+    parent: "stress response"
+
+  - canonical: "SOS response"
+    aliases: ["DNA damage response"]
+    taxonomy_hint: process
+    parent: "stress response"
+
+  - canonical: "starvation response"
+    aliases: ["nutrient starvation", "stringent response"]
+    taxonomy_hint: process
+    parent: "stress response"
+
+  # ─────────────────────────────────────────────────────────────────
+  # REGULATION
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "transcriptional regulation"
+    aliases: ["transcription factor regulation", "gene expression regulation"]
+    taxonomy_hint: regulatory
+    parent: "gene regulation"
+
+  - canonical: "two-component signaling"
+    aliases: ["two-component system", "TCS"]
+    taxonomy_hint: regulatory
+    parent: "signal transduction"
+
+  - canonical: "quorum sensing"
+    aliases: ["cell-cell signaling"]
+    taxonomy_hint: process
+    parent: "signal transduction"
+
+  - canonical: "sigma factor regulation"
+    aliases: ["alternative sigma factors"]
+    taxonomy_hint: regulatory
+    parent: "gene regulation"
+
+  # ─────────────────────────────────────────────────────────────────
+  # DNA / RNA PROCESSES
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "DNA replication"
+    aliases: []
+    taxonomy_hint: process
+    parent: "genome maintenance"
+
+  - canonical: "DNA repair"
+    aliases: ["DNA damage repair"]
+    taxonomy_hint: process
+    parent: "genome maintenance"
+
+  - canonical: "homologous recombination"
+    aliases: ["HR", "recombination"]
+    taxonomy_hint: process
+    parent: "genome maintenance"
+
+  - canonical: "transcription"
+    aliases: ["RNA synthesis"]
+    taxonomy_hint: process
+    parent: "gene expression"
+
+  - canonical: "translation"
+    aliases: ["protein synthesis"]
+    taxonomy_hint: process
+    parent: "gene expression"
+
+  # ─────────────────────────────────────────────────────────────────
+  # ANTIMICROBIAL RESISTANCE
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "antibiotic target modification"
+    aliases: ["target alteration", "AMR target modification"]
+    taxonomy_hint: process
+    parent: "antimicrobial resistance"
+
+  - canonical: "antibiotic inactivation"
+    aliases: ["enzymatic antibiotic inactivation", "β-lactamase activity"]
+    taxonomy_hint: process
+    parent: "antimicrobial resistance"
+
+  # ─────────────────────────────────────────────────────────────────
+  # CELL BEHAVIOR
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "biofilm formation"
+    aliases: ["biofilm development"]
+    taxonomy_hint: process
+    parent: "community behavior"
+
+  - canonical: "motility"
+    aliases: ["flagellar motility", "swarming", "swimming motility"]
+    taxonomy_hint: process
+    parent: "cell behavior"
+
+  - canonical: "chemotaxis"
+    aliases: []
+    taxonomy_hint: process
+    parent: "cell behavior"
+
+  # ─────────────────────────────────────────────────────────────────
+  # GENE / PROTEIN CATEGORIES (higher-order, for functional-dark-matter work)
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "essential genes"
+    aliases: ["essentiality", "essential gene set"]
+    taxonomy_hint: gene_category
+    parent: "essentiality"
+
+  - canonical: "hypothetical proteins"
+    aliases: ["unannotated proteins", "proteins of unknown function", "dark genes"]
+    taxonomy_hint: gene_category
+    parent: "functional annotation"
+
+  - canonical: "conserved genes"
+    aliases: ["core genome", "conserved gene set"]
+    taxonomy_hint: gene_category
+    parent: "comparative genomics"
+
+  # ─────────────────────────────────────────────────────────────────
+  # PHENOTYPES
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "growth rate"
+    aliases: ["doubling time", "generation time"]
+    taxonomy_hint: phenotype
+    parent: "growth"
+
+  - canonical: "fitness"
+    aliases: ["fitness defect", "fitness cost", "competitive fitness"]
+    taxonomy_hint: phenotype
+    parent: "growth"
+
+  # ─────────────────────────────────────────────────────────────────
+  # ECOLOGY / COMMUNITY
+  # ─────────────────────────────────────────────────────────────────
+  - canonical: "microbial community structure"
+    aliases: ["community composition", "microbiome structure"]
+    taxonomy_hint: process
+    parent: "community ecology"
+
+  - canonical: "host-microbe interactions"
+    aliases: ["host colonization", "commensalism"]
+    taxonomy_hint: process
+    parent: "community ecology"

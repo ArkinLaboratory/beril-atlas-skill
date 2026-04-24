@@ -1,0 +1,88 @@
+# Journals vocabulary — v1
+# Surfaced from Phase 0 extraction across 6 sampled projects.
+# Used to add a journal-axis to the citation graph (publications → journals → projects).
+#
+# Schema per entry:
+#   canonical: full journal name
+#   aliases: common abbreviated forms (italicized in citations)
+#   issn: optional, cached only — no live lookups
+#   domain: broad area for grouping
+#
+# Journals are extracted from references.md (when present) and inline citation
+# patterns like "Author et al. (Year). Title. *Journal* vol:pp."
+# Italic markup is a HINT for journal candidates but not required (per
+# _match_rules.v1.yaml — dictionary primary).
+
+_meta:
+  vocab_name: journals
+  version: 1
+  created: 2026-04-18
+  entry_count: 16
+
+entries:
+
+  - canonical: "Nature"
+    aliases: ["Nature"]
+    domain: multidisciplinary
+
+  - canonical: "Nature Biotechnology"
+    aliases: ["Nat Biotechnol", "Nature Biotechnology"]
+    domain: biotechnology
+
+  - canonical: "Nature Microbiology"
+    aliases: ["Nat Microbiol"]
+    domain: microbiology
+
+  - canonical: "Cell"
+    aliases: ["Cell"]
+    domain: cell_biology
+
+  - canonical: "Cell Systems"
+    aliases: ["Cell Syst"]
+    domain: systems_biology
+
+  - canonical: "mBio"
+    aliases: ["mBio"]
+    domain: microbiology
+
+  - canonical: "mSystems"
+    aliases: ["mSystems"]
+    domain: systems_microbiology
+
+  - canonical: "PLoS Biology"
+    aliases: ["PLoS Biol", "PLOS Biology"]
+    domain: biology
+
+  - canonical: "PLoS Genetics"
+    aliases: ["PLoS Genet", "PLOS Genetics"]
+    domain: genetics
+
+  - canonical: "Applied and Environmental Microbiology"
+    aliases: ["Appl Environ Microbiol", "AEM"]
+    domain: environmental_microbiology
+
+  - canonical: "Journal of Bacteriology"
+    aliases: ["J Bacteriol", "JB"]
+    domain: microbiology
+
+  - canonical: "Nature Communications"
+    aliases: ["Nat Commun"]
+    domain: multidisciplinary
+
+  - canonical: "BMC Genomics"
+    aliases: ["BMC Genomics"]
+    domain: genomics
+
+  - canonical: "Microbiome"
+    aliases: ["Microbiome"]
+    domain: microbiology
+
+  - canonical: "ISME Journal"
+    aliases: ["ISMEJ", "ISME J", "The ISME Journal"]
+    domain: microbial_ecology
+
+  - canonical: "Bioinformatics"
+    aliases: ["Bioinformatics"]
+    domain: computational_biology
+
+# End of journals.v1.yaml

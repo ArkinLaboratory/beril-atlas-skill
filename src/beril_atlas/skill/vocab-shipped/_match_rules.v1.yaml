@@ -1,0 +1,54 @@
+# Default vocabulary match rules — applied by L2 entity resolver
+# Per-entry rules in individual vocab files override these defaults.
+# Version v1, 2026-04-18
+
+_meta:
+  version: 1
+  created: 2026-04-18
+  next_review: drift-driven (no fixed cadence)
+
+# Text normalization applied at both load-time (to vocab aliases) and match-time (to input text)
+text_normalization:
+  lowercase: true                    # case-insensitive match
+  strip_dashes: true                 # "RB-TnSeq" matches "rbtnseq" matches "rb-tnseq"
+  strip_underscores: true            # "snake_case" matches "snakecase"
+  collapse_internal_whitespace: true # "Fitness  Browser" → "fitness browser"
+  strip_surrounding_punctuation: true
+
+# Markdown formatting (italics, bold, backticks) is STRIPPED before matching.
+# Original formatting may be retained as a weak +0.1 confidence boost when an
+# italic-binomial-shaped candidate matches an organism dictionary entry, but
+# formatting is NEVER required for a match. Dictionary primacy.
+markdown_handling:
+  strip_italic_for_match: true
+  strip_bold_for_match: true
+  italic_binomial_confidence_boost: 0.1  # tie-breaker only
+
+# Tokenization: hyphens are atomic. "MR-1" is one token; never matches bare "MR".
+# Don't split on hyphens, slashes, dots, or underscores when extracting tokens.
+tokenization:
+  atomic_chars: ['-', '/', '.', '_']
+  word_boundary_chars: [' ', '\t', '\n', ',', ';', ':', '(', ')', '[', ']', '"', "'"]
+
+# 2-letter abbreviations (PA, CF, FB, OG, EC, etc.) are HIGH-AMBIGUITY by default.
+# Three-tier handling:
+two_letter_acronym_rule:
+  policy: doc_local_alias_resolution
+  description: |
+    A 2-letter token is tagged as an entity ONLY when a longer canonical form
+    appears in the same document AND that canonical has the 2-letter token in
+    its aliases list. The first longer-form mention establishes the alias for
+    that document; subsequent 2-letter mentions inherit. If no longer form
+    appears in the document, 2-letter tokens are NOT tagged (drift report
+    surfaces them for review).
+  fallback: skip_unmapped_two_letter_tokens
+
+# Acronyms ≥3 chars matched directly against acronym aliases (no doc-local needed)
+
+# Dictionary lookup is the PRIMARY entity-identification mechanism.
+# Pattern-based "candidate detection" (e.g., italic-binomials, all-caps tokens)
+# is used ONLY to surface unmapped tokens to the drift report, NEVER to tag.
+extraction_policy:
+  identification: dictionary_lookup_only
+  drift_candidates: pattern_based_unmapped_only
+  ambiguous_disambiguation: doc_local_context_window  # surrounding 200 chars

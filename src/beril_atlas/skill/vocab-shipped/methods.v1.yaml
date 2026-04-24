@@ -1,0 +1,202 @@
+# Methods vocabulary — v1
+# Calibrated to the 53-project Phase 0 corpus. Entries cover computational and
+# experimental methods actually deployed across the sampled projects.
+#
+# Categories:
+#   fitness_profiling | genomics_comparative | metabolic_modeling | community_ecology |
+#   literature_mining | phenotype_database | phylogenetics | statistical | ml_method
+#
+# Out of scope: individual statistical tests below a useful granularity (e.g., t-test),
+# every permutation of BLAST parameters, etc.
+
+_meta:
+  vocab_name: methods
+  version: 1
+  created: 2026-04-18
+  entry_count: 35
+
+entries:
+
+  # ==== Fitness / essentiality profiling ====
+
+  - canonical: "RB-TnSeq"
+    aliases: ["random-barcode transposon sequencing", "randomly barcoded transposon sequencing", "TnSeq", "transposon fitness profiling"]
+    category: fitness_profiling
+    notes: "Wetmore et al. 2015 mBio; primary method for FitnessBrowser compendium"
+
+  - canonical: "FBA"
+    aliases: ["flux balance analysis", "flux-balance analysis"]
+    category: metabolic_modeling
+    notes: "Constraint-based metabolic simulation"
+
+  - canonical: "ME-models"
+    aliases: ["metabolism and expression models", "ME model"]
+    category: metabolic_modeling
+
+  - canonical: "dynamic FBA"
+    aliases: ["dFBA", "dynamic flux balance analysis"]
+    category: metabolic_modeling
+
+  - canonical: "single-gene deletion collection"
+    aliases: ["de Berardinis collection", "deletion library", "knockout library"]
+    category: fitness_profiling
+    notes: "e.g., de Berardinis et al. 2008 for ADP1"
+
+  - canonical: "CRISPRi repression"
+    aliases: ["CRISPRi", "Mobile-CRISPRi", "CRISPR interference"]
+    category: fitness_profiling
+
+  # ==== Pangenome / comparative genomics ====
+
+  - canonical: "pangenome analysis"
+    aliases: ["pangenome comparative genomics", "pan-genome analysis", "pangenome"]
+    category: genomics_comparative
+    notes: "Comparative genomics across species or strain collections"
+
+  - canonical: "DIAMOND-based ortholog clustering"
+    aliases: ["DIAMOND", "DIAMOND clustering", "ortholog clustering"]
+    category: genomics_comparative
+
+  - canonical: "eggNOG orthology mapping"
+    aliases: ["eggNOG", "eggnog-mapper", "eggNOG_OGs", "eggNOG-mapper"]
+    category: genomics_comparative
+
+  - canonical: "GTDB taxonomic classification"
+    aliases: ["GTDB", "Genome Taxonomy Database classification"]
+    category: genomics_comparative
+
+  - canonical: "prophage detection"
+    aliases: ["prophage", "terminase-defined prophage lineages"]
+    category: genomics_comparative
+
+  - canonical: "cross-species synteny analysis"
+    aliases: ["synteny", "gene neighborhood conservation", "operon conservation"]
+    category: genomics_comparative
+
+  - canonical: "bakta annotation"
+    aliases: ["bakta", "bakta v1.12.0"]
+    category: genomics_comparative
+    notes: "Bacterial genome annotation pipeline"
+
+  - canonical: "RAST annotation"
+    aliases: ["RAST"]
+    category: genomics_comparative
+
+  # ==== Pathway analysis ====
+
+  - canonical: "GapMind pathway completeness"
+    aliases: ["GapMind", "GapMind score", "pathway gap analysis"]
+    category: metabolic_modeling
+    notes: "Detects incomplete biosynthetic pathways"
+
+  - canonical: "KEGG pathway analysis"
+    aliases: ["KEGG", "KEGG orthology", "KO"]
+    category: metabolic_modeling
+    notes: "KO alias is 2-letter; apply doc-local resolution"
+    doc_local_aliases: ["KO"]
+
+  # ==== Community ecology ====
+
+  - canonical: "16S rRNA amplicon sequencing"
+    aliases: ["16S", "16S amplicon", "amplicon sequencing"]
+    category: community_ecology
+
+  - canonical: "ASV analysis"
+    aliases: ["ASV", "amplicon sequence variant", "ASV-based community analysis"]
+    category: community_ecology
+    notes: "DADA2-style sequence-variant resolution"
+
+  - canonical: "NMDS ordination"
+    aliases: ["NMDS", "non-metric multidimensional scaling"]
+    category: statistical
+
+  - canonical: "Bray-Curtis dissimilarity"
+    aliases: ["Bray-Curtis", "Curtis dissimilarity"]
+    category: statistical
+
+  # ==== Literature / database mining ====
+
+  - canonical: "PaperBLAST literature search"
+    aliases: ["PaperBLAST", "paperblast"]
+    category: literature_mining
+
+  - canonical: "BLAST sequence search"
+    aliases: ["BLAST", "MMseqs", "MMseqs2"]
+    category: genomics_comparative
+
+  # ==== Phenotype database ====
+
+  - canonical: "BacDive phenotype lookup"
+    aliases: ["BacDive", "BacDive validation", "BacDive-measured phenotypes"]
+    category: phenotype_database
+
+  - canonical: "Web of Microbes exometabolomics"
+    aliases: ["Web of Microbes", "WebOfMicrobes", "WOM"]
+    category: phenotype_database
+
+  # ==== Statistical / ML methods ====
+
+  - canonical: "Fisher's exact test"
+    aliases: ["Fisher exact", "Fisher's test"]
+    category: statistical
+
+  - canonical: "Bonferroni correction"
+    aliases: ["Bonferroni"]
+    category: statistical
+
+  - canonical: "FDR / Benjamini-Hochberg correction"
+    aliases: ["FDR", "BH-FDR", "q-value", "Benjamini-Hochberg"]
+    category: statistical
+
+  - canonical: "Spearman rank correlation"
+    aliases: ["Spearman", "Spearman rho", "Spearman ρ", "Spearman correlation"]
+    category: statistical
+
+  - canonical: "Pearson correlation"
+    aliases: ["Pearson"]
+    category: statistical
+
+  - canonical: "Kruskal-Wallis test"
+    aliases: ["Kruskal-Wallis", "Wallis test"]
+    category: statistical
+
+  - canonical: "ROC-AUC classification"
+    aliases: ["ROC", "AUC", "ROC-AUC", "ROC curve analysis"]
+    category: statistical
+
+  - canonical: "Cohen's kappa concordance"
+    aliases: ["Cohen kappa", "kappa", "κ"]
+    category: statistical
+
+  - canonical: "Independent Component Analysis (ICA)"
+    aliases: ["ICA", "robust ICA", "independent component analysis", "ICA modules"]
+    category: ml_method
+    notes: "Used for fitness-module decomposition (Sastry et al.)"
+
+  - canonical: "AlphaEarth environmental embeddings"
+    aliases: ["AlphaEarth", "AlphaEarth embedding", "alphaearth_embeddings"]
+    category: ml_method
+
+  - canonical: "UMAP dimensionality reduction"
+    aliases: ["UMAP", "umap-learn"]
+    category: ml_method
+
+  # ==== Specialized biology-specific methods ====
+
+  - canonical: "codon usage bias analysis"
+    aliases: ["CUB", "codon usage bias"]
+    category: genomics_comparative
+
+  - canonical: "T3SS virulence profiling"
+    aliases: ["T3SS", "Type III secretion system profiling", "T3SS effector mapping"]
+    category: genomics_comparative
+
+  - canonical: "covering-set optimization"
+    aliases: ["covering set", "set-cover", "greedy set-cover", "minimum covering set"]
+    category: ml_method
+
+  - canonical: "cofitness correlation"
+    aliases: ["cofit", "cofitness", "cofit correlation"]
+    category: fitness_profiling
+
+# End of methods.v1.yaml

@@ -1,0 +1,162 @@
+# Question-types vocabulary — v1
+# Two-axis categorical taxonomy. Every project classifies into exactly one Domain
+# (Axis 1) and one Mode (Axis 2). The 6×5 = 30-cell space replaces the original
+# 10-label flat list (which was non-orthogonal and produced κ artifacts; see
+# design-note §6.10).
+#
+# Growth mechanisms (per design-note §9.5):
+#   - extend_axis — a project genuinely doesn't fit any existing cell → propose
+#     new category on one axis
+#   - refine_definition — borderline cases reveal a cell's operational definition
+#     needs sharpening
+#   - add_example — new project phrasing strengthens an existing anchor example
+
+_meta:
+  vocab_name: question-types
+  version: 1
+  created: 2026-04-18
+  structure: two_axis_categorical
+  multi_label_allowed: false
+  corpus_portfolio_calibrated: true
+
+axis_1_domain:
+  description: |
+    The scientific domain the project's primary question addresses.
+    Mutually exclusive at the project level — a project may touch
+    adjacent domains in methods but the question drives the label.
+
+  entries:
+
+    - canonical: biochemistry-metabolism
+      operational_definition: |
+        Concerns pathways, reactions, enzymes, fluxes — what an organism
+        metabolically produces, consumes, or transforms. Distinct from
+        physiology-phenotype by its molecular/mechanistic granularity.
+      anchor_phrases:
+        - "aromatic catabolism requires..."
+        - "metabolic capability vs. dependency"
+        - "universally essential reactions"
+
+    - canonical: physiology-phenotype
+      operational_definition: |
+        Observed organism-level fitness, growth, traits, or behaviors.
+        Includes essentiality (observed as growth defects) and phenotypic
+        profiles from fitness assays. Biochemical mechanism is backdrop,
+        not the primary question.
+      anchor_phrases:
+        - "gene deletion phenotypes"
+        - "fitness defects under..."
+        - "essentiality under condition X"
+
+    - canonical: ecology-environment
+      operational_definition: |
+        Organisms in ecosystems: communities, habitats, biogeography,
+        environmental adaptation. Includes both field-sample community
+        ecology (16S amplicons) and global-scale biogeographic patterns
+        at the pangenome level.
+      anchor_phrases:
+        - "community structure across sites"
+        - "biogeographic distribution"
+        - "environment effect on gene content"
+
+    - canonical: evolution-comparative-genomics
+      operational_definition: |
+        Cross-species or cross-strain comparison; pangenome analysis;
+        conservation vs. divergence; phylogenetic patterns. The question
+        is "how do we understand variation across a clade?"
+      anchor_phrases:
+        - "conservation across bacteria"
+        - "pangenome openness"
+        - "cross-species module families"
+
+    - canonical: biotechnology-application
+      operational_definition: |
+        Engineering, formulation, biomanufacturing, or clinical/health
+        applications. The output is prescriptive — a design, a formulation,
+        a clinical recommendation — not descriptive knowledge.
+        Encompasses what the original taxonomy called "health-related."
+      anchor_phrases:
+        - "multi-criterion formulation"
+        - "PA inhibition explained by..."
+        - "AMR fitness cost in clinical context"
+
+    - canonical: methodology-tools
+      operational_definition: |
+        The question concerns a method, database, tool, or pipeline
+        itself rather than a biological question answered using one.
+        Database explorers, pipeline benchmarks, and resource
+        characterization fall here.
+      anchor_phrases:
+        - "what does the X collection contain?"
+        - "coverage patterns across..."
+        - "benchmark approach for..."
+
+  dropped_from_original_10:
+    - label: structural
+      reason: "Zero projects in Phase 0 corpus address structural biology. Reinstate via extend_axis growth mechanism if BERIL takes on a structural project."
+
+  non_orthogonal_labels_absorbed:
+    - mutations: "now Axis 1 = physiology-phenotype, Axis 2 = discovery or characterization"
+    - population_dynamics: "now Axis 1 = ecology-environment or evolution-comparative-genomics, Axis 2 = characterization or mechanism"
+    - health_related: "now Axis 1 = biotechnology-application"
+    - environmental: "merged into ecology-environment"
+
+axis_2_mode:
+  description: |
+    The inquiry mode — what the project is TRYING to do with its question.
+    Mutually exclusive at the project level. Orthogonal to Axis 1.
+
+  entries:
+
+    - canonical: discovery
+      operational_definition: |
+        Finding new things that weren't known to exist: uncharacterized
+        genes, novel phenotypes, hidden pathways, dark matter. The
+        output is additions to the known catalogue of X.
+      anchor_phrases:
+        - "which genes of unknown function..."
+        - "can we identify..."
+        - "what does the X reveal that was previously hidden?"
+
+    - canonical: characterization
+      operational_definition: |
+        Catalog or measure properties of known entities at scale.
+        The output is a distribution, a profile, a map — a structured
+        description of something that already exists.
+      anchor_phrases:
+        - "what is the distribution of..."
+        - "how does X vary across..."
+        - "map of Y across Z"
+
+    - canonical: mechanism
+      operational_definition: |
+        Explain HOW something works — the causal or functional pathway
+        underlying an observation. The output is a mechanistic account,
+        often with a testable prediction.
+      anchor_phrases:
+        - "why does X require Y?"
+        - "is Z mediated by..."
+        - "what explains the coupling between..."
+
+    - canonical: prediction
+      operational_definition: |
+        Forecast or infer values / outcomes not yet measured.
+        Distinct from characterization (which reports measured values)
+        and from mechanism (which explains). Prediction asserts
+        something about an unmeasured case.
+      anchor_phrases:
+        - "can we predict X from Y?"
+        - "does Z forecast..."
+        - "multi-criterion framework that explains measured..."
+
+    - canonical: synthesis
+      operational_definition: |
+        Integrate prior results from multiple sources/projects into
+        a unified picture. The output builds on existing findings —
+        the work IS the integration.
+      anchor_phrases:
+        - "how do A, B, C together explain..."
+        - "building on prior project X..."
+        - "integrating evidence from multiple..."
+
+# ==== Portfolio classification of 17 projects (Phase 0) ====

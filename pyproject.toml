@@ -1,0 +1,250 @@
+####################################################################
+# beril-atlas-skill — draft pyproject.toml (Task #2 deliverable)
+#
+# Status: DRAFT 2026-04-24. Awaiting Adam review before first package build.
+# Decisions flagged inline with "# DECISION:" tags.
+#
+# Dependency list derived from import audit of:
+#   - scripts/atlas_lib/ (all modules, including deferred/try-except imports)
+#   - scripts/atlas_scan.py
+#   - scripts/atlas_metrics.py
+#   - scripts/atlas_render.py
+#   - scripts/atlas_warehouse.py
+#   - tests/atlas/*.py
+#
+# Over-specifications removed vs. scripts/requirements-atlas.txt:
+#   - pyarrow: not imported anywhere. Drop.
+#   - nbformat: not imported (notebooks.py uses stdlib json). Drop.
+#   - pydantic: not imported. Drop.
+####################################################################
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+# DECISION: hatchling over setuptools. Modern, ergonomic for src-layout,
+# handles package-data (skill/ folder) cleanly. setuptools is the safer
+# fallback if we hit a hatchling-specific issue.
+
+# ----------------------------------------------------------------------
+# Project metadata
+# ----------------------------------------------------------------------
+
+[project]
+name = "beril-atlas-skill"
+version = "0.1.0"
+description = "BERIL Atlas — read-only retrofit analyzer for a local BERIL deployment, distributed as a Claude Code skill + Python engine."
+readme = "README.md"
+requires-python = ">=3.10"
+
+authors = [
+    {name = "Arkin Laboratory", email = "aparkin@lbl.gov"},
+]
+
+# DECISION: license placeholder. Needs Adam's choice (MIT? BSD-3? Apache-2?)
+# before first release. Most academic packages in this space use MIT.
+license = {text = "MIT"}
+
+keywords = [
+    "bioinformatics",
+    "claude-code",
+    "beril",
+    "kbase",
+    "research-observatory",
+    "knowledge-graph",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    # Prevents accidental `twine upload` while repo is private.
+    # Remove this classifier when going public on PyPI.
+    "Private :: Do Not Upload",
+]
+
+# ----------------------------------------------------------------------
+# Runtime dependencies
+# ----------------------------------------------------------------------
+#
+# Version floors are chosen for stability, not to follow requirements-atlas.txt
+# verbatim. Rationale per-line:
+
+dependencies = [
+    # Warehouse engine. 1.0 shipped mid-2024 with a stability guarantee;
+    # pre-1.0 files may not be readable by 1.x.
+    "duckdb>=1.0.0",
+
+    # Metrics + export. 2.0 is the breaking-change pandas release; all modern
+    # usage is 2.x.
+    "pandas>=2.0.0",
+
+    # Deferred import in atlas_metrics.py. 1.24 aligns with pandas 2.0 floor.
+    "numpy>=1.24.0",
+
+    # XLSX export (atlas_lib/metrics.py).
+    "openpyxl>=3.1.0",
+
+    # Vocab YAML loading.
+    "pyyaml>=6.0",
+
+    # Research-line community detection (Louvain) + dashboard network layout.
+    # Deferred import with graceful fallback in research_lines.py, but hard
+    # requirement in render.py for dashboard panels — ship as required.
+    "networkx>=3.0",
+
+    # CBORG client (primary LLM provider). Deferred import inside CBORGClient
+    # with helpful error message, but required for any real scan.
+    "openai>=1.0.0",
+
+    # llm_config.py soft-imports this. Without it the user must set env vars
+    # manually; most users will want the .env convenience.
+    "python-dotenv>=1.0.0",
+]
+
+# ----------------------------------------------------------------------
+# Optional dependencies (extras)
+# ----------------------------------------------------------------------
+#
+# DECISION: keep LLM provider SDKs as extras, not required. Installing only
+# the providers you use keeps the dep footprint small. CBORG (openai SDK) is
+# required because it's the default provider in llm_config.py.
+
+[project.optional-dependencies]
+
+# Direct Anthropic API provider. AnthropicClient is a stub today; this extra
+# is a forward hook for when it's wired up.
+anthropic = [
+    "anthropic>=0.25.0",
+]
+
+# Google Gemini provider. No client code today; this extra is a forward hook.
+google = [
+    "google-genai>=0.5.0",
+]
+
+# Test + dev tooling.
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.4.0",
+    "build>=1.0.0",
+]
+
+# Convenience: pip install 'beril-atlas-skill[all]' gets everything.
+all = [
+    "beril-atlas-skill[anthropic,google,dev]",
+]
+
+# ----------------------------------------------------------------------
+# Console scripts
+# ----------------------------------------------------------------------
+
+[project.scripts]
+beril-atlas = "beril_atlas.cli:main"
+
+# DECISION: single entry point with subcommand dispatch. Subcommands:
+#   beril-atlas install-skill <BERIL_ROOT>
+#   beril-atlas configure                 # also invoked by /beril-atlas-configure
+#   beril-atlas scan [--projects-root ...] [other args]
+#   beril-atlas metrics [...]
+#   beril-atlas render [...]
+#   beril-atlas fixture-regen             # maintainer-only
+# Subcommand structure fleshed out in Task #3.
+
+# ----------------------------------------------------------------------
+# URLs (populated once repo exists)
+# ----------------------------------------------------------------------
+
+[project.urls]
+Homepage = "https://github.com/ArkinLaboratory/beril-atlas-skill"
+Issues = "https://github.com/ArkinLaboratory/beril-atlas-skill/issues"
+Repository = "https://github.com/ArkinLaboratory/beril-atlas-skill.git"
+
+# ----------------------------------------------------------------------
+# Build configuration
+# ----------------------------------------------------------------------
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/beril_atlas"]
+
+# The shipped skill directory (SKILL.md, prompts, vocab-shipped, references)
+# lives inside the package at src/beril_atlas/skill/ and ships as package
+# data. Accessed at runtime via importlib.resources.
+# Task #3 will determine whether we need explicit force-include here once
+# the directory structure is finalized.
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/beril_atlas",
+    "tests",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+exclude = [
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/.DS_Store",
+    # State directories never ship — belt-and-suspenders alongside .gitignore.
+    "src/beril_atlas/skill/state",
+    "src/beril_atlas/skill/vocab-local",
+    "src/beril_atlas/skill/contrib",
+]
+
+# ----------------------------------------------------------------------
+# Tool configurations
+# ----------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+# Markers used by the current tests (grep from tests/atlas to confirm before
+# first CI run).
+markers = [
+    "integration: marks tests that hit live LLM APIs (deselect with '-m \"not integration\"')",
+    "slow: marks tests that take >5s",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long — handled by formatter
+]
+
+####################################################################
+# Open questions for Adam review
+####################################################################
+# 1. License text — confirm "MIT" or override.
+# 2. Python floor — >=3.10 reasonable? Your spike env is 3.10
+#    (cpython-310 in __pycache__). Going higher drops friend-machines
+#    that haven't upgraded. Going lower adds compat testing burden.
+# 3. Package name on PyPI eventually: "beril-atlas-skill" or
+#    "beril-atlas"? The "-skill" suffix clarifies it's a Claude Code
+#    skill package, but makes the pip install line ugly. No wrong answer.
+# 4. Should `openai` (CBORG's SDK) be required or under a [cborg]
+#    extra? Currently required because it's the default provider and
+#    a default-install-works story matters. If you'd prefer extras-
+#    only, we tell users `pipx install 'beril-atlas-skill[cborg]'`.
+####################################################################
