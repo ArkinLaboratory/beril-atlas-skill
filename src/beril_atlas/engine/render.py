@@ -1284,19 +1284,24 @@ def fetch_edge_type_summary(con):
     # doesn't starve samples for smaller ones. Pre-fix: overall LIMIT 40
     # gave synthesis (the largest edge_type) zero samples because smaller
     # categories filled the limit alphabetically.
+    # v0.1.11: also surface confidence so the embedded table can show it.
     samples = {}
     for r in con.execute("""
         WITH ranked AS (
-          SELECT edge_type, src_project_id, dst_project_id, rationale, source_quote,
+          SELECT edge_type, src_project_id, dst_project_id, confidence,
+                 rationale, source_quote,
                  ROW_NUMBER() OVER (PARTITION BY edge_type ORDER BY confidence DESC) AS rn
           FROM edge_classifications
         )
-        SELECT edge_type, src_project_id, dst_project_id, rationale, source_quote
+        SELECT edge_type, src_project_id, dst_project_id, confidence,
+               rationale, source_quote
         FROM ranked WHERE rn <= 10
         ORDER BY edge_type, rn
     """).fetchall():
         samples.setdefault(r[0], []).append({
-            "src": r[1], "dst": r[2], "rationale": r[3], "source_quote": r[4],
+            "src": r[1], "dst": r[2],
+            "confidence": float(r[3]) if r[3] is not None else 0.0,
+            "rationale": r[4], "source_quote": r[5],
         })
     return {
         "summary": [{"edge_type": r[0], "count": r[1],
@@ -3540,17 +3545,23 @@ def render_edge_type_panel(bundle):
     data_js = json.dumps({"summary": summary, "samples": samples})
 
     # v0.1.11: flatten samples-by-type into one sortable+filterable table.
+    # Note the samples dict uses keys "src" and "dst" (set by
+    # fetch_edge_type_summary), not "src_project_id"/"dst_project_id".
+    # First v0.1.11 release had a key-name bug that left those columns blank.
     table_rows = []
     for et, rows in samples.items():
         for r in rows:
-            src = (r.get("src_project_id") or "").replace("<", "&lt;")
-            dst = (r.get("dst_project_id") or "").replace("<", "&lt;")
+            src = (r.get("src") or "").replace("<", "&lt;")
+            dst = (r.get("dst") or "").replace("<", "&lt;")
             conf = float(r.get("confidence") or 0.0)
             rationale = (r.get("rationale") or "").replace("<", "&lt;")
             quote = (r.get("source_quote") or "").replace("<", "&lt;")
             table_rows.append(
-                f'<tr><td>{src}</td><td>{dst}</td><td>{et}</td>'
-                f'<td>{conf:.2f}</td><td>{rationale}</td>'
+                f'<tr><td><code>{src}</code></td>'
+                f'<td><code>{dst}</code></td>'
+                f'<td>{et}</td>'
+                f'<td>{conf:.2f}</td>'
+                f'<td>{rationale}</td>'
                 f'<td><span style="color:#666;font-style:italic;">{quote[:200]}</span></td></tr>'
             )
     table_html = (
@@ -4198,6 +4209,16 @@ def render_discoveries_timeline(rows, claims_by_bucket=None):
         research-hygiene signal. Time axis is project completion date.
         <strong>Click any point</strong> to see the individual claims that
         landed in that (month, type) bucket (drawer below, up to 20 per cell).
+        <br><br>
+        <strong>Why the line may stop before today's date:</strong> only
+        projects with a non-null <code>completion_date</code> appear on this
+        chart. A project's completion_date comes from the latest dated
+        revision in its RESEARCH_PLAN or REPORT. New projects still in the
+        plan-only phase (no REPORT yet) — and projects whose latest revision
+        carries no date — contribute their entity mentions to other panels
+        but are absent here. The L7 findings panel and the metrics-to-watch
+        panel are NOT filtered this way, so they reflect the full corpus
+        including in-flight work.
       </div>
       <div id="chart-discoveries" class="chart"></div>
       <div id="discoveries-drawer" class="detail-panel" style="margin-top:1rem; min-height:120px;">
