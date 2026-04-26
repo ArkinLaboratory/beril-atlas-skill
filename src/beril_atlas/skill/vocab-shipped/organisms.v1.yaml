@@ -79,7 +79,7 @@ entries:
     aliases: ["S. oneidensis MR-1", "MR-1"]
     taxonomy: "γ-proteobacteria / Shewanellaceae / Shewanella"
     parent_species: "Shewanella oneidensis"
-    notes: "bare "MR" is NOT a valid alias — hyphen mandatory (prevents MR-1 being miscounted as bare MR)"
+    notes: "bare 'MR' is NOT a valid alias — hyphen mandatory (prevents MR-1 being miscounted as bare MR)"
 
   # ==== Other prominent bacteria ====
 
