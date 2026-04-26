@@ -565,6 +565,7 @@ def _run_l2_extraction(*, sections, outputs_root: Path,
     cache.close()
     return {
         "requested": True,
+        "extract_limit": limit,  # None for full scan; int for sampled
         "extractable_sections": len(extractable),
         "mentions": len(all_mentions),
         "drift_candidates": len(all_drifts),

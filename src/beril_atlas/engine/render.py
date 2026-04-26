@@ -4578,21 +4578,45 @@ def main(argv=None):
     # Diagnostic: if EITHER journal OR function has any rows, BOTH should.
     # They're both added by the same (v2+) prompt — seeing exactly one means
     # extraction ran half-broken, which is worth failing loud rather than
-    # silently rendering empty panels. Does not catch "rendered from the
-    # wrong warehouse" — for that, rely on the prompt_version+counts banner
-    # above and the pinned provenance block in sample-output/README.md.
+    # silently rendering empty panels.
+    #
+    # EXCEPTION: if the run used --extract-limit (sampled subset), the
+    # asymmetry is expected (the sampled sections may not have included
+    # references.md content where journals appear). Downgrade to warning
+    # in that case. Detects via manifest.json next to the warehouse.
     if not partial_phase_2b:
         counts = dict(con.execute(
             "SELECT entity_kind, COUNT(*) FROM entity_mentions GROUP BY 1"
         ).fetchall())
         jo, fu = counts.get("journal", 0), counts.get("function", 0)
         if (jo > 0) != (fu > 0):  # XOR — exactly one populated
+            # Check manifest for extract_limit
+            limited = False
+            try:
+                import json as _json
+                manifest_path = args.warehouse.parent / "manifest.json"
+                if manifest_path.is_file():
+                    m = _json.loads(manifest_path.read_text())
+                    l2 = m.get("l2_extraction", {}) or {}
+                    if l2.get("extract_limit"):
+                        limited = True
+            except Exception:
+                pass
+
             msg = (
-                f"FAIL: partial v2 extraction — journal={jo}, function={fu}. "
-                f"Both are v2 kinds and should be co-populated. counts: {counts}"
+                f"v2 extraction asymmetry — journal={jo}, function={fu}. "
+                f"Both are v2 kinds and should be co-populated in a full "
+                f"scan. counts: {counts}"
             )
-            print(f"[atlas-render] {msg}", file=sys.stderr, flush=True)
-            raise SystemExit(2)
+            if limited:
+                print(f"[atlas-render] WARN: {msg} "
+                      f"(manifest indicates --extract-limit; expected for "
+                      f"sampled scans, continuing)",
+                      file=sys.stderr, flush=True)
+            else:
+                print(f"[atlas-render] FAIL: partial v2 extraction — {msg}",
+                      file=sys.stderr, flush=True)
+                raise SystemExit(2)
 
     organisms = fetch_top_organisms(con) if not partial_phase_2b else []
     methods = fetch_top_methods(con) if not partial_phase_2b else []
