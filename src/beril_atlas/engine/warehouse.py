@@ -572,6 +572,44 @@ def populate_authors(con: duckdb.DuckDBPyConnection,
             "INSERT INTO project_authors VALUES (?,?,?,?,?,?)",
             join_rows)
 
+    # v0.1.10: consolidate name-only authors into ORCID-keyed authors when
+    # canonical_name matches exactly. Pre-v0.1.10 a project that listed an
+    # author without ORCID created a separate author_id (e.g.,
+    # gene_function_ecological_agora's bullet `**Adam Arkin**` produced
+    # `name:adam_arkin` even though `orcid:0000-0002-4999-2931 / Adam Arkin`
+    # existed in 20 other projects). Result: dashboard split his identity
+    # across two Gantt rows.
+    #
+    # Conservative merge: only when (a) the no-ORCID author's name matches
+    # EXACTLY one ORCID-keyed author's canonical_name, and (b) such match
+    # exists. Skip on multiple-match (legitimate two-people-same-name) and
+    # zero-match (legitimate ORCID-less author).
+    name_only = con.execute("""
+        SELECT author_id, canonical_name
+        FROM authors
+        WHERE author_id LIKE 'name:%'
+    """).fetchall()
+    for no_id, no_name in name_only:
+        candidates = con.execute("""
+            SELECT author_id FROM authors
+            WHERE author_id LIKE 'orcid:%'
+              AND canonical_name = ?
+        """, [no_name]).fetchall()
+        if len(candidates) == 1:
+            target_id = candidates[0][0]
+            # Re-key project_authors rows from no_id → target_id
+            con.execute(
+                "UPDATE project_authors SET author_id = ? WHERE author_id = ?",
+                [target_id, no_id])
+            # Remove the redundant author row
+            con.execute("DELETE FROM authors WHERE author_id = ?", [no_id])
+            print(f"[atlas-warehouse] merged author {no_id} → {target_id} "
+                  f"(canonical_name match: {no_name!r})")
+        # If multiple ORCID candidates share the name (rare; two real people
+        # with identical canonical_names), leave the no_id row alone — better
+        # to surface duplicate identities than silently merge.
+        # If zero candidates, the no_id author is legitimate; leave alone.
+
 
 def populate_sections(con: duckdb.DuckDBPyConnection,
                        all_sections: list[s_mod.Section],

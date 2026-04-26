@@ -2121,7 +2121,7 @@ def render_authors_table(authors):
         )
     rows = "\n".join(_author_row(a) for a in authors)
     return f"""
-    <table class="sortable">
+    <table class="sortable filterable">
       <thead><tr><th>Author</th><th>ORCID</th><th style="text-align:right;"># projects</th><th style="text-align:right;"># research lines</th></tr></thead>
       <tbody>{rows}</tbody>
     </table>
@@ -2207,7 +2207,7 @@ def render_top_cited_table(top_cited):
         for c in top_cited
     )
     return f"""
-    <table class="sortable">
+    <table class="sortable filterable">
       <thead>
         <tr>
           <th>Project</th>
@@ -2738,7 +2738,7 @@ def render_research_lines_panel(lines, handoffs=None, subclusters=None):
         <strong>Click a row</strong> for sub-cluster breakdowns.
       </div>
       <div style="overflow-x:auto;">
-      <table class="data-table">
+      <table class="sortable filterable data-table">
         <thead>
           <tr>
             <th>Line</th>
@@ -3006,6 +3006,17 @@ def render_author_gantt_panel(gantt):
         // Build citation-arrow annotations: each arrow goes from the citing
         // project's END at its author's row to the cited project's START at
         // its author's row. Cross-author only (computed server-side).
+        // v0.1.10: size the chart container to the computed plot height so
+        // it pushes subsequent panels down instead of letting Plotly clip
+        // inside the .chart-tall 500px min-height. Pre-v0.1.10 the Gantt
+        // visually overlapped the next panel ("Author interaction graph").
+        const computedHeight = Math.max(500, G.total_rows * 42 + 80);
+        const ganttContainer = document.getElementById('chart-author-gantt');
+        if (ganttContainer) {{
+          ganttContainer.style.minHeight = computedHeight + 'px';
+          ganttContainer.style.height = computedHeight + 'px';
+        }}
+
         // v0.1.9: arrow y endpoints use numeric y_positions (the bar's
         // sub-row offset within its author block), not author display names.
         // Filter out arrows where either endpoint failed to find a matching
@@ -3056,10 +3067,13 @@ def render_author_gantt_panel(gantt):
             range: [G.total_rows - 0.5, -0.5],
           }},
           barmode:'overlay',
-          // v0.1.9: height grows with total sub-rows, not just author count.
-          // An author with 5 overlapping projects expands their visual block
-          // to 5 sub-rows × 42px instead of cramming them onto one row.
-          height: Math.max(320, G.total_rows * 42 + 80),
+          // v0.1.9/v0.1.10: height grows with total sub-rows, not just author
+          // count. An author with 5 overlapping projects expands their visual
+          // block to 5 sub-rows × 42px instead of cramming them onto one row.
+          // Also size the parent container so subsequent panels don't get
+          // overlapped (v0.1.10 fix — caught on hub when the rendered chart
+          // height exceeded the .chart-tall min-height: 500px CSS rule).
+          height: Math.max(500, G.total_rows * 42 + 80),
           annotations: arrowAnnotations,
         }}, {{responsive:true, displayModeBar:false}});
         document.getElementById('chart-author-gantt').on('plotly_click', (e) => {{
@@ -3153,7 +3167,7 @@ def render_underexplored_combinations_panel(rows, plausibility_scores=None):
         heavy author concentration (risk A2), the independence assumption is
         coarse.
       </div>
-      <table class="sortable">
+      <table class="sortable filterable">
         <thead>
           <tr>
             <th>Entity A</th>
@@ -3638,7 +3652,7 @@ def render_metrics_to_watch_panel(rows):
         a single snapshot is just the starting baseline.
       </div>
       <div style="overflow-x:auto;">
-        <table class="data-table">
+        <table class="sortable filterable data-table">
           <thead>
             <tr>
               <th>Metric</th>
@@ -4462,7 +4476,7 @@ def render_dark_matter_table(rows):
         under-explored combinations panel below for cross-entity gaps and
         the L6 recommendations panel for synthesis.
       </div>
-      <table class="sortable">
+      <table class="sortable filterable">
         <thead><tr><th>Canonical</th><th>Kind</th><th>Source project</th><th>Source section</th></tr></thead>
         <tbody>
           {''.join(rows_html)}
@@ -5146,27 +5160,115 @@ window.showProjectDetail = function(pid, targetId) {{
 </main>
 
 <script>
-// --- Sortable tables ---
-document.querySelectorAll('table.sortable').forEach(table => {{
-  table.querySelectorAll('th').forEach((th, idx) => {{
-    th.addEventListener('click', () => {{
-      const tbody = table.querySelector('tbody');
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      const asc = !th.classList.contains('sort-asc');
-      table.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc','sort-desc'));
-      th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-      rows.sort((a,b) => {{
-        const av = a.children[idx].innerText.trim();
-        const bv = b.children[idx].innerText.trim();
-        const an = parseFloat(av.replace(/,/g,''));
-        const bn = parseFloat(bv.replace(/,/g,''));
-        if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
-        return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+// --- Sortable + filterable tables (v0.1.10) ---
+//
+// Every table.sortable gets click-to-sort headers (numeric, date-aware, or
+// string). Every table.filterable gets a filter input prepended above it
+// that does case-insensitive substring search across all cells. Filterable
+// tables also get a "showing N of M" counter that updates live.
+//
+// To enable on a table:
+//   class is "sortable filterable" -> both
+//   class is "sortable"             -> sort only
+//   class is "filterable"           -> filter only
+//
+// Date-column detection: a cell value matching /^\d{{4}}-\d{{2}}-\d{{2}}$/ is
+// treated as ISO date and sorted by Date.parse for ascending chronology.
+// Numeric detection: parseFloat(value.replace(/,/g, '')) succeeds → numeric.
+// Otherwise: locale-aware string compare.
+
+(function() {{
+  const ISO_DATE_RE = /^\d{{4}}-\d{{2}}-\d{{2}}$/;
+
+  function cellValue(tr, idx) {{
+    const c = tr.children[idx];
+    return c ? c.innerText.trim() : '';
+  }}
+
+  function detectKind(values) {{
+    let allDate = true, allNum = true, anyValue = false;
+    for (const v of values) {{
+      if (!v) continue;
+      anyValue = true;
+      if (!ISO_DATE_RE.test(v)) allDate = false;
+      if (isNaN(parseFloat(v.replace(/,/g, '')))) allNum = false;
+    }}
+    if (!anyValue) return 'string';
+    if (allDate) return 'date';
+    if (allNum) return 'number';
+    return 'string';
+  }}
+
+  function compareWithKind(a, b, kind) {{
+    if (kind === 'date') return Date.parse(a) - Date.parse(b);
+    if (kind === 'number') {{
+      return parseFloat(a.replace(/,/g, '')) - parseFloat(b.replace(/,/g, ''));
+    }}
+    return a.localeCompare(b);
+  }}
+
+  // Sortable headers
+  document.querySelectorAll('table.sortable').forEach(table => {{
+    table.querySelectorAll('th').forEach((th, idx) => {{
+      th.style.cursor = 'pointer';
+      th.title = 'Click to sort';
+      th.addEventListener('click', () => {{
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const asc = !th.classList.contains('sort-asc');
+        table.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        const values = rows.map(r => cellValue(r, idx));
+        const kind = detectKind(values);
+        rows.sort((a, b) => {{
+          const av = cellValue(a, idx);
+          const bv = cellValue(b, idx);
+          const cmp = compareWithKind(av, bv, kind);
+          return asc ? cmp : -cmp;
+        }});
+        rows.forEach(r => tbody.appendChild(r));
       }});
-      rows.forEach(r => tbody.appendChild(r));
     }});
   }});
-}});
+
+  // Filter inputs
+  document.querySelectorAll('table.filterable').forEach(table => {{
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    const allRows = Array.from(tbody.querySelectorAll('tr'));
+    if (allRows.length < 2) return;  // not worth filtering tiny tables
+
+    // Build the input + counter, prepend BEFORE the table.
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-filter';
+    wrapper.style.cssText = 'margin: 0.4em 0; display: flex; gap: 0.6em; align-items: center; font-size: 0.9em;';
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.placeholder = 'Filter rows…';
+    input.style.cssText = 'padding: 0.3em 0.5em; border: 1px solid #ccc; border-radius: 4px; flex: 0 0 240px; font-size: 0.95em;';
+    const counter = document.createElement('span');
+    counter.style.cssText = 'color: #666; font-style: italic;';
+    counter.textContent = `${{allRows.length}} rows`;
+    wrapper.appendChild(input);
+    wrapper.appendChild(counter);
+    table.parentNode.insertBefore(wrapper, table);
+
+    function applyFilter() {{
+      const q = input.value.toLowerCase().trim();
+      let visible = 0;
+      for (const r of allRows) {{
+        const text = r.innerText.toLowerCase();
+        const match = !q || text.includes(q);
+        r.style.display = match ? '' : 'none';
+        if (match) visible++;
+      }}
+      counter.textContent = q
+        ? `${{visible}} of ${{allRows.length}} rows`
+        : `${{allRows.length}} rows`;
+    }}
+    input.addEventListener('input', applyFilter);
+  }});
+}})();
 
 // --- Panel collapse toggle ---
 // Clicking on the panel-header (the h3 title row) collapses/expands the panel.

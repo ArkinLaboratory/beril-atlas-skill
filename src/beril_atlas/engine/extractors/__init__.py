@@ -242,6 +242,39 @@ class Extractor(ABC):
                     model_id=self.model_id,
                 ))
                 return result
+
+            # v0.1.10: length-aware retry. If the first call hit
+            # finish_reason='length', the response is truncated and re-parsing
+            # is guaranteed to fail. Retry once with double max_tokens before
+            # caching, so the cache row reflects the best result we can get.
+            # Caught 2026-04-26 on hub: ibd_phage_targeting :: Key Findings
+            # exceeded 16K output tokens even with the v0.1.9 default.
+            if chat_resp.finish_reason == "length":
+                from .. import llm_config as _llm_config_mod  # local import to avoid cycles
+                first_max = (chat_resp.completion_tokens or 0) + 2000
+                # Use the model's max via config; fall back to 2× the call's used budget.
+                # If the user has overridden default_max_tokens upward, respect it.
+                bumped = max(first_max * 2, 32000)
+                try:
+                    chat_resp = self.llm.chat(
+                        messages,
+                        response_format="json",
+                        max_tokens=bumped,
+                    )
+                    result.llm_call_count = 2  # paid for the retry
+                    result.llm_total_tokens = chat_resp.total_tokens
+                except lc.LLMClientError:
+                    # Stick with the truncated first response if retry fails;
+                    # cache it so the parse_error notes capture finish_reason='length'.
+                    pass
+                else:
+                    if chat_resp.finish_reason == "length":
+                        # Even the doubled budget wasn't enough — give up on this section.
+                        # The cache write below will record finish_reason='length' so the
+                        # parse_error notes flag it, and v0.1.8's cache.get() will bypass
+                        # this row on next scan (treats length as cache miss).
+                        pass
+
             response_content = chat_resp.content
             self.cache.put(
                 content=section.content,
@@ -256,8 +289,10 @@ class Extractor(ABC):
                     "finish_reason": chat_resp.finish_reason,
                 },
             )
-            result.llm_call_count = 1
-            result.llm_total_tokens = chat_resp.total_tokens
+            # llm_call_count was set above on retry; default to 1 if no retry.
+            if result.llm_call_count == 0:
+                result.llm_call_count = 1
+                result.llm_total_tokens = chat_resp.total_tokens
 
         try:
             mentions, drifts = self.parse_llm_response(response_content, section)
