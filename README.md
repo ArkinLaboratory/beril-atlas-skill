@@ -51,11 +51,102 @@ This walks you through provider selection (CBORG only in v0.1), appends
 the atlas configuration template to `BERIL_ROOT/.env`, and runs a smoke
 test against your provider.
 
-Once configured, run scans via:
+## Workflows
+
+Three patterns. Pick one based on what you're doing.
+
+### A. Bootstrap — first scan of a BERIL deployment
+
+You're installing the atlas on a fresh BERIL install and want a baseline
+dashboard. This pays the full L2 extraction cost once (~5M tokens / ~45 min
+on a 50-project corpus).
 
 ```bash
-beril-atlas scan
+cd <BERIL_ROOT>           # the directory with projects/ and .claude/
+OUT=~/.beril-atlas/latest
+
+beril-atlas scan --projects-root projects --outputs-root "$OUT" --extract
+beril-atlas metrics --warehouse "$OUT/atlas.duckdb" --outputs "$OUT"
+beril-atlas render \
+  --warehouse "$OUT/atlas.duckdb" \
+  --metrics-dir "$OUT/metrics" \
+  --output "$OUT/dashboard.html"
+
+open "$OUT/dashboard.html"   # macOS; xdg-open on Linux
 ```
+
+`~/.beril-atlas/latest` is the recommended stable outputs directory. It holds
+the warehouse (`atlas.duckdb`), the extraction cache (`extraction_cache.duckdb`),
+the metrics CSV/XLSX exports, and the rendered dashboard.
+
+### B. Periodic rescan — the working loop
+
+After a `/submit` and merge, after editing a `RESEARCH_PLAN.md`, or whenever
+you want the dashboard to reflect the current corpus. Run **the exact same
+three commands as bootstrap**. Same `$OUT` dir means the cache is hot — only
+new or changed content pays LLM cost.
+
+```bash
+cd <BERIL_ROOT>
+OUT=~/.beril-atlas/latest
+
+beril-atlas scan --projects-root projects --outputs-root "$OUT" --extract
+beril-atlas metrics --warehouse "$OUT/atlas.duckdb" --outputs "$OUT"
+beril-atlas render \
+  --warehouse "$OUT/atlas.duckdb" \
+  --metrics-dir "$OUT/metrics" \
+  --output "$OUT/dashboard.html"
+```
+
+The warehouse is rebuilt from scratch each run (it's a snapshot artifact);
+the extraction cache persists. A typical "one new project, one revised plan"
+rescan finishes in seconds with negligible LLM cost.
+
+You can also trigger this from inside a Claude Code session in your BERIL
+directory by asking Claude to "rescan the atlas" — it will run these three
+commands via Bash. There is no `/beril-atlas-update` slash command in v0.1.
+
+### C. Archival snapshot — when you want to keep history
+
+You want an immutable copy of the dashboard as of today (e.g., to compare
+"April" vs "August" portfolio state). Use a timestamped directory and
+manually seed the cache from `latest`:
+
+```bash
+cd <BERIL_ROOT>
+TS=$(date -u +"%Y%m%d-%H%M%SZ")
+OUT=~/.beril-atlas/runs/$TS
+mkdir -p "$OUT"
+
+# Seed the cache so the snapshot scan is near-free.
+[ -f ~/.beril-atlas/latest/extraction_cache.duckdb ] && \
+  cp ~/.beril-atlas/latest/extraction_cache.duckdb "$OUT/"
+
+beril-atlas scan --projects-root projects --outputs-root "$OUT" --extract
+beril-atlas metrics --warehouse "$OUT/atlas.duckdb" --outputs "$OUT"
+beril-atlas render \
+  --warehouse "$OUT/atlas.duckdb" \
+  --metrics-dir "$OUT/metrics" \
+  --output "$OUT/dashboard.html"
+```
+
+If you skip the `cp` step, the snapshot scan starts with an empty cache and
+pays the full bootstrap cost. A future release will add `--reuse-cache` /
+`--seed-cache-from` flags so the manual copy step goes away.
+
+### One more thing — cache key
+
+The extraction cache lives **inside `--outputs-root`** as
+`extraction_cache.duckdb`. Cache key is
+`sha256(content) + prompt_version + vocab_version + model_id`. So:
+
+- File-content unchanged? Cache hit (free).
+- Same prompt version? Cache hit (free).
+- New BERIL project? Cache miss for that project's sections only.
+- Bumped a vocab version or prompt version? Cache miss across the board.
+
+Choose your `--outputs-root` accordingly: `latest` for the working loop,
+`runs/<ts>` (cache-seeded) for archival snapshots.
 
 ## What this does
 

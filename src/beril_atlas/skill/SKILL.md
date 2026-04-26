@@ -102,23 +102,38 @@ done at the current `prompt_version`.
   layout (risk F1).
 - Per-act LLM findings summary (under discussion).
 
-## Slash-command actions
+## CLI actions
 
-### `/beril-atlas scan` — deterministic L1+L3, no LLM
+The atlas is driven by `beril-atlas` CLI commands. There is no
+`/beril-atlas-scan` or `/beril-atlas-update` slash command in v0.1 —
+`/beril-atlas-configure` is the only shipped slash command. To rescan
+from inside a Claude Code session in BERIL_ROOT, ask Claude to "rescan
+the atlas" and it will invoke `beril-atlas scan` etc. via Bash.
+
+All commands below assume you're in BERIL_ROOT (the directory containing
+`projects/` and `.claude/`). Use `beril-atlas --beril-root <path>` or set
+`BERIL_ROOT` to override discovery.
+
+**The three workflow patterns are documented in the package README's
+"Workflows" section** — bootstrap, periodic rescan, archival snapshot.
+The recommended outputs root for the working loop is
+`~/.beril-atlas/latest` (stable name; cache stays hot across rescans);
+use `~/.beril-atlas/runs/<timestamp>/` only for immutable history snapshots
+and seed the cache from `latest` before scanning.
+
+### `beril-atlas scan` — deterministic L1+L3, no LLM
 
 Runs the filesystem walker, parses canonical docs, builds the warehouse, populates sophistication composite AND research_lines. No LLM cost. ~2 seconds on a 53-project corpus.
-
-All commands below assume you're in BERIL_ROOT (the directory containing `projects/` and `.claude/`). Use `beril-atlas --beril-root <path>` or set `BERIL_ROOT` to override discovery.
 
 ```bash
 beril-atlas scan \
   --projects-root projects \
-  --outputs-root ~/.beril-atlas/runs/$(date +%Y%m%d-%H%M%S)
+  --outputs-root ~/.beril-atlas/latest
 ```
 
 Populates: `projects`, `project_revisions`, `authors`, `project_authors`, `sections`, `notebooks`, `reuse_edges`, `sophistication_composite`, `research_lines`, `runs`. Without `--extract`, `sophistication_composite.breadth_score` is zero (no entity mentions) and `partial_phase_2b=True`.
 
-### `/beril-atlas scan --extract` — L1 + L2 LLM extraction + post-hoc + L6
+### `beril-atlas scan --extract` — L1 + L2 LLM extraction + post-hoc + L6
 
 Same as scan, plus:
 1. Runs `UniversalExtractor` over all extractable sections with
@@ -145,7 +160,7 @@ To re-run only L6 against an existing warehouse (e.g., after a prompt edit),
 the `generate_recommendations` function in `beril_atlas.engine.posthoc_classifiers`
 is the single entry point — idempotent at `l6_recommendations.v1`.
 
-### `/beril-atlas report` — dashboard
+### `beril-atlas metrics` + `beril-atlas render` — exports + dashboard
 
 Runs `beril-atlas metrics` (CSV + XLSX exports with provenance) then `beril-atlas render` (the HTML dashboard). Reads from an existing warehouse; no new LLM cost.
 
