@@ -10,20 +10,53 @@ writeup grounded in the warehouse rows.
 
 ## Install
 
+Pick the install URL that matches your GitHub auth setup. Run
+`gh auth status` first to check what's available — both options
+work; pick the one that doesn't make you set up a new credential.
+
+**Option 1 — HTTPS via `gh` credential helper (preferred if `gh` is
+authenticated).** Works on any environment where `gh auth login` has
+been run and git's credential helper is wired to `gh` (the default
+after `gh auth login`). No PAT in the URL, no SSH key needed:
+
+```bash
+pipx install git+https://github.com/ArkinLaboratory/beril-atlas-skill.git
+```
+
+If you don't have `gh`: `brew install gh` (macOS) or
+`conda install -c conda-forge gh` (other), then `gh auth login`.
+
+**Option 2 — SSH (preferred if you already use SSH keys for git):**
+
 ```bash
 pipx install git+ssh://git@github.com/ArkinLaboratory/beril-atlas-skill.git
 ```
 
-Note the explicit `git@` — `git+ssh://` URLs require it for GitHub.
+Note the explicit `git@` — `git+ssh://` URLs require it for GitHub
+(without it, ssh tries your local username and fails).
 
 If you get `Permission denied (publickey)` and your SSH key has a
-passphrase, the agent needs the key loaded first:
+passphrase, load the agent first:
 
 ```bash
 ssh-add ~/.ssh/id_ed25519
 ```
 
 Then retry the install.
+
+**Option 3 — HTTPS with a personal access token in the URL** (only if
+you can't use the gh helper or SSH):
+
+```bash
+set +o history                                # don't log the PAT in shell history
+GH_PAT=$(cat ~/.gh_pat)                       # or paste your PAT here
+pipx install "git+https://${GH_PAT}@github.com/ArkinLaboratory/beril-atlas-skill.git"
+unset GH_PAT
+set -o history
+```
+
+The PAT needs `repo` scope. Generate at
+GitHub → Settings → Developer settings → Personal access tokens.
 
 **Windows**: prerequisite is `python -m pip install --user pipx; python -m pipx ensurepath`.
 
