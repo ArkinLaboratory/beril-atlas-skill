@@ -103,8 +103,15 @@ the extraction cache persists. A typical "one new project, one revised plan"
 rescan finishes in seconds with negligible LLM cost.
 
 You can also trigger this from inside a Claude Code session in your BERIL
-directory by asking Claude to "rescan the atlas" — it will run these three
-commands via Bash. There is no `/beril-atlas-update` slash command in v0.1.
+directory with the slash command:
+
+```
+/beril-atlas-update
+```
+
+This is just a wrapper around the three commands above. It runs them against
+`~/.beril-atlas/latest`, surfaces the cache-hit ratio and any L2 errors, and
+points you at the rebuilt dashboard.
 
 ### C. Archival snapshot — when you want to keep history
 
