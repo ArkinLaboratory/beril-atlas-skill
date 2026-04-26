@@ -807,10 +807,79 @@ def fetch_author_gantt_data(con, top_n_authors: int = 10):
                     "src_end": sb["end"],
                     "dst_start": db["start"],
                 })
+    # ---- Sub-row layout for authors with overlapping projects -----------
+    #
+    # v0.1.9: assign each bar a y_position computed via greedy interval
+    # coloring within its author's block. Pre-v0.1.9 every (author, project)
+    # bar landed on the same y-category as the author, causing visually
+    # merged bars when the same author had multiple concurrent projects
+    # (Adam Arkin's row had ~6 projects overlapping early-2026, all
+    # rendering on top of each other).
+    bars_by_author: dict[str, list[dict]] = {}
+    for b in bars:
+        bars_by_author.setdefault(b["author_id"], []).append(b)
+
+    def _assign_subrows(author_bars: list[dict]) -> int:
+        """Greedy interval coloring. Returns number of sub-rows used."""
+        author_bars.sort(key=lambda x: (x["start"], x["end"]))
+        subrow_end_dates: list[str] = []  # subrow_end_dates[i] = end of last bar in subrow i
+        for ab in author_bars:
+            placed = False
+            for i, last_end in enumerate(subrow_end_dates):
+                if ab["start"] >= last_end:  # ISO date strings compare correctly
+                    ab["subrow"] = i
+                    subrow_end_dates[i] = ab["end"]
+                    placed = True
+                    break
+            if not placed:
+                ab["subrow"] = len(subrow_end_dates)
+                subrow_end_dates.append(ab["end"])
+        return max(1, len(subrow_end_dates))
+
+    # Walk top_ids in order; reserve a block for each author. Authors with
+    # zero bars (unlikely on top-N but defended against) still get one row.
+    author_blocks: dict[str, tuple[int, int]] = {}
+    cursor = 0
+    for aid in top_ids:
+        author_bars = bars_by_author.get(aid, [])
+        height = _assign_subrows(author_bars) if author_bars else 1
+        author_blocks[aid] = (cursor, height)
+        cursor += height
+
+    # Stamp y_position on every bar.
+    for b in bars:
+        bs, _ = author_blocks[b["author_id"]]
+        b["y_position"] = bs + b.get("subrow", 0)
+
+    # Stamp y_position on arrow endpoints. Arrows already reference specific
+    # src and dst bars by project_id; recover the y_position from those.
+    for arr in arrows:
+        for sb in bar_by_proj.get(arr["src_project"], []):
+            if sb["author_display"] == arr["src_author_display"]:
+                arr["src_y_position"] = sb["y_position"]
+                break
+        for db in bar_by_proj.get(arr["dst_project"], []):
+            if db["author_display"] == arr["dst_author_display"]:
+                arr["dst_y_position"] = db["y_position"]
+                break
+
+    # Author tick positions: midpoint of each block, label = display_name.
+    author_tick_positions: list[float] = []
+    author_tick_labels: list[str] = []
+    for aid in top_ids:
+        bs, h = author_blocks[aid]
+        author_tick_positions.append(bs + (h - 1) / 2.0)
+        author_tick_labels.append(id_to_meta[aid]["display_name"])
+
+    total_rows = sum(h for _, h in author_blocks.values())
+
     return {
         "authors": [id_to_meta[a] | {"id": a} for a in top_ids],
         "bars": bars,
         "arrows": arrows,
+        "author_tick_positions": author_tick_positions,
+        "author_tick_labels": author_tick_labels,
+        "total_rows": total_rows,
     }
 
 
@@ -2911,7 +2980,12 @@ def render_author_gantt_panel(gantt):
         }});
         const xs = validBars.map(b => Math.max(parseDate(b.end) - parseDate(b.start), msPerDay()));
         const bases = validBars.map(b => parseDate(b.start));
-        const ys = validBars.map(b => b.author_display);
+        // v0.1.9: y is the server-computed numeric y_position (sub-row
+        // within author block). The yaxis is configured below with custom
+        // tickvals/ticktext so author names label the BLOCK, not each
+        // individual sub-row. Authors with overlapping projects get
+        // multiple sub-rows; the bars stack instead of merging visually.
+        const ys = validBars.map(b => b.y_position);
         // customdata: [project_id, start_iso, end_iso, full_author_name].
         // The hovertemplate references customdata[1..3] explicitly because
         // Plotly's %-x on a base+x bar is the DURATION, not the end epoch —
@@ -2932,15 +3006,22 @@ def render_author_gantt_panel(gantt):
         // Build citation-arrow annotations: each arrow goes from the citing
         // project's END at its author's row to the cited project's START at
         // its author's row. Cross-author only (computed server-side).
-        const arrowAnnotations = (G.arrows || []).map(a => ({{
-          x: a.dst_start, y: a.dst_author_display,
-          ax: a.src_end, ay: a.src_author_display,
-          xref: 'x', yref: 'y', axref: 'x', ayref: 'y',
-          showarrow: true, arrowhead: 3, arrowsize: 1.2,
-          arrowwidth: 1.2, arrowcolor: 'rgba(30, 64, 175, 0.55)',
-          standoff: 2, startstandoff: 2,
-          text: '', opacity: 0.85,
-        }}));
+        // v0.1.9: arrow y endpoints use numeric y_positions (the bar's
+        // sub-row offset within its author block), not author display names.
+        // Filter out arrows where either endpoint failed to find a matching
+        // bar (defensive — should not happen but guards against future
+        // schema drift).
+        const arrowAnnotations = (G.arrows || [])
+          .filter(a => a.src_y_position !== undefined && a.dst_y_position !== undefined)
+          .map(a => ({{
+            x: a.dst_start, y: a.dst_y_position,
+            ax: a.src_end, ay: a.src_y_position,
+            xref: 'x', yref: 'y', axref: 'x', ayref: 'y',
+            showarrow: true, arrowhead: 3, arrowsize: 1.2,
+            arrowwidth: 1.2, arrowcolor: 'rgba(30, 64, 175, 0.55)',
+            standoff: 2, startstandoff: 2,
+            text: '', opacity: 0.85,
+          }}));
         Plotly.newPlot('chart-author-gantt', [{{
           type: 'bar',
           orientation: 'h',
@@ -2960,13 +3041,25 @@ def render_author_gantt_panel(gantt):
           margin:{{l:140, r:20, t:20, b:50}},
           xaxis:{{type:'date', title:'Project active window'}},
           yaxis:{{
-            type:'category',
-            categoryorder:'array',
-            categoryarray: authorOrder.slice().reverse(),  // top author on top
+            // v0.1.9: numeric y with custom tick labels at the midpoint of
+            // each author's sub-row block. Reversed so top author sits at
+            // the top of the chart (matches the categoryarray.reverse()
+            // pattern used in the pre-v0.1.9 category-axis layout).
+            type:'linear',
+            tickmode:'array',
+            tickvals: G.author_tick_positions,
+            ticktext: G.author_tick_labels,
+            autorange:'reversed',
             automargin: true,
+            // Cushion the top/bottom so the outermost bars aren't flush
+            // against the plot edge.
+            range: [G.total_rows - 0.5, -0.5],
           }},
           barmode:'overlay',
-          height: Math.max(320, authorOrder.length * 42 + 80),
+          // v0.1.9: height grows with total sub-rows, not just author count.
+          // An author with 5 overlapping projects expands their visual block
+          // to 5 sub-rows × 42px instead of cramming them onto one row.
+          height: Math.max(320, G.total_rows * 42 + 80),
           annotations: arrowAnnotations,
         }}, {{responsive:true, displayModeBar:false}});
         document.getElementById('chart-author-gantt').on('plotly_click', (e) => {{

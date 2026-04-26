@@ -32,7 +32,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "beril-atlas-skill"
-version = "0.1.8"
+version = "0.1.9"
 description = "BERIL Atlas — read-only retrofit analyzer for a local BERIL deployment, distributed as a Claude Code skill + Python engine."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -108,6 +108,12 @@ dependencies = [
     # llm_config.py soft-imports this. Without it the user must set env vars
     # manually; most users will want the .env convenience.
     "python-dotenv>=1.0.0",
+
+    # Permissive JSON parser. Last-resort fallback in extract_json() for
+    # responses that json.loads rejects but are close enough to JSON to
+    # recover — handles trailing commas, single quotes, unquoted keys, etc.
+    # v0.1.9 added; pure-Python, ~200KB.
+    "json5>=0.9.0",
 ]
 
 # ----------------------------------------------------------------------

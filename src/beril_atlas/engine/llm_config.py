@@ -61,16 +61,17 @@ class LLMConfig:
 
     # Defaults applied when an extractor doesn't override.
     #
-    # max_tokens=8000: the L2 universal extractor returns JSON for all
+    # max_tokens=16000: the L2 universal extractor returns JSON for all
     # entity kinds (organisms + methods + databases + journals + functions +
-    # question_types + conclusions) for one section. Dense sections
-    # (References, Methodology, Key Findings) easily exceed 2000 output
-    # tokens — was the cause of the 10 cached parse_errors observed in
-    # v0.1.7 on the BERDL hub. Anthropic claude-sonnet supports up to 64k
-    # output tokens; 8000 is a conservative ceiling that handles all
-    # observed dense sections with headroom.
+    # question_types + conclusions) for one section. Dense sections like
+    # References lists with many citations exceeded the v0.1.8 cap of 8000;
+    # 2 of 10 cached parse_errors on the 2026-04-26 hub run still had
+    # finish_reason='length' at 8K. Anthropic claude-sonnet supports up to
+    # 64k output tokens. 16000 gives headroom for the longest observed
+    # dense sections (~12K tokens) and any future expansion of the entity
+    # vocabulary that increases output size.
     default_temperature: float = 0.0
-    default_max_tokens: int = 8000
+    default_max_tokens: int = 16000
 
     def __str__(self) -> str:  # repr falls back to dataclass default minus api_key
         masked = f"...{self.api_key[-4:]}" if self.api_key else "MISSING"

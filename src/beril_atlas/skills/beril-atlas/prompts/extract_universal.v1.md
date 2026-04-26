@@ -1,5 +1,5 @@
 ---
-prompt_version: universal.v2
+prompt_version: universal.v3
 purpose: Extract all relevant entities from one BERIL canonical-doc section in a single LLM call
 scope: |
   Per design note v0.9 (LLM-primary extraction), a single prompt covers
@@ -9,6 +9,11 @@ scope: |
   LLM can use existing canonical names where they apply, and propose new
   ones otherwise.
   v1 → v2 (2026-04-19): added `journals` and `functions` entity kinds.
+  v2 → v3 (2026-04-26): tightened JSON-validity rules to forbid literal
+  double-quote characters inside string values. 8 of 1422 sections in the
+  hub corpus produced unparseable JSON in v2 because the model emitted
+  inline-citation quotes inside source_quote fields without escaping.
+  See Rule 11 below.
 response_format: strict-json
 max_tokens_budget: 1800
 ---
@@ -102,6 +107,24 @@ Respond ONLY with a JSON object of this exact shape (no markdown, no preamble):
 8. For `journals`: extract journal names from inline citations ("Smith et al. 2023, *Nature Microbiology* 8:1234" → `Nature Microbiology`). References-list entries count too. Do NOT extract journal-like words that are not part of a citation.
 9. For `functions`: extract biological-process, pathway, or regulatory-category mentions (e.g., "oxidative phosphorylation", "biofilm formation", "amino acid biosynthesis"). Do NOT extract individual genes or proteins — those are out of scope for this kind. Prefer the CANONICAL process name over surface forms when a KNOWN_CANONICAL matches.
 10. Respond with the JSON object ONLY — no preamble, no markdown fence, no commentary.
+11. **JSON string values MUST NOT contain literal double-quote characters (`"`).** This is the single most common cause of extraction failures. When the section content includes a quoted phrase or paper title, render it inside `source_quote` / `evidence_quote` using SINGLE QUOTES or NO QUOTES — never double quotes.
+
+    WRONG (parser will fail at the inner `"`):
+    ```
+    "source_quote": "...mutants of *A. baylyi* ADP1." *Molecular Systems Biology* 4:174."
+    ```
+
+    RIGHT (single quotes for inner quoted material):
+    ```
+    "source_quote": "...mutants of *A. baylyi* ADP1.' *Molecular Systems Biology* 4:174."
+    ```
+
+    or RIGHT (omit inner quote marks; the source_quote is a paraphrase aid, not a verbatim copy when verbatim would break JSON):
+    ```
+    "source_quote": "...mutants of *A. baylyi* ADP1. *Molecular Systems Biology* 4:174."
+    ```
+
+    Same rule applies to `evidence_quote`, `change_description`, `claim_text`, and any other string-valued field. Backslash-escaping (`\"`) is also valid JSON but harder to get right reliably — prefer the substitute-or-omit approach.
 
 # Examples
 

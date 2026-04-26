@@ -121,6 +121,30 @@ def extract_json(text: str) -> Any:
             except json.JSONDecodeError:
                 continue
 
+    # 4. Permissive fallback via json5 — handles trailing commas, single
+    # quotes, unquoted keys, and a handful of other Claude-via-CBORG quirks.
+    # Notably does NOT recover from unescaped double-quote chars inside
+    # string values; that ambiguity is fundamental and only the prompt can
+    # prevent it (see prompts/extract_universal.v1.md rule 11). json5 is a
+    # last-resort attempt before giving up.
+    try:
+        import json5  # noqa: I001
+    except ImportError:
+        json5 = None  # type: ignore
+    if json5 is not None:
+        # Try the full text and the bracket-balanced slices in turn.
+        candidates = [text]
+        for opener, closer in (("{", "}"), ("[", "]")):
+            start = text.find(opener)
+            end = text.rfind(closer)
+            if 0 <= start < end:
+                candidates.append(text[start:end + 1])
+        for cand in candidates:
+            try:
+                return json5.loads(cand)
+            except (ValueError, Exception):  # json5 raises ValueError + custom
+                continue
+
     raise LLMValidationError(f"No parseable JSON in response: {text[:200]!r}")
 
 

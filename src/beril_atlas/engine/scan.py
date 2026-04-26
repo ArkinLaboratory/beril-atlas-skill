@@ -372,6 +372,7 @@ def main(argv: list[str] = None) -> int:
         outputs_root=args.outputs_root,
         exclude_patterns=exclude_patterns,
         manifest_path=manifest_path,
+        files_generated=files_generated,
         test_atlas_marker_file=args.test_marker_file,
     )
 
