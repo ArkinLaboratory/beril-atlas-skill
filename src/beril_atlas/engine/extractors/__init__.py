@@ -247,14 +247,14 @@ class Extractor(ABC):
             # finish_reason='length', the response is truncated and re-parsing
             # is guaranteed to fail. Retry once with double max_tokens before
             # caching, so the cache row reflects the best result we can get.
-            # Caught 2026-04-26 on hub: ibd_phage_targeting :: Key Findings
-            # exceeded 16K output tokens even with the v0.1.9 default.
+            # v0.1.11: retry caps at 64K (Anthropic claude-sonnet's hard
+            # ceiling). Sections that still truncate at 64K need section
+            # chunking (Task #34, v0.2).
             if chat_resp.finish_reason == "length":
-                from .. import llm_config as _llm_config_mod  # local import to avoid cycles
                 first_max = (chat_resp.completion_tokens or 0) + 2000
-                # Use the model's max via config; fall back to 2× the call's used budget.
-                # If the user has overridden default_max_tokens upward, respect it.
-                bumped = max(first_max * 2, 32000)
+                # Push to model's hard ceiling (64K for Anthropic claude-sonnet).
+                # If first call already used 32K, double would be 64K — same.
+                bumped = min(max(first_max * 2, 64000), 64000)
                 try:
                     chat_resp = self.llm.chat(
                         messages,

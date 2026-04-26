@@ -2078,6 +2078,26 @@ def _csv_link(view_name, metrics_dir_name="metrics/csv"):
     return f'<a class="csv-link" href="{metrics_dir_name}/{view_name}.csv">download CSV</a>'
 
 
+def _generated_at_badge(observed_at) -> str:
+    """v0.1.11: render a 'Generated YYYY-MM-DD HH:MM (UTC)' badge for
+    LLM-derived panels. Surfaces panel staleness so users can tell whether
+    the panel reflects this scan or an earlier one.
+
+    Accepts either an ISO string or a datetime object; returns empty string
+    if the timestamp is missing.
+    """
+    if not observed_at:
+        return ""
+    if hasattr(observed_at, "strftime"):
+        ts = observed_at.strftime("%Y-%m-%d %H:%M UTC")
+    else:
+        # ISO string — strip subseconds and timezone for compactness
+        ts = str(observed_at)[:16].replace("T", " ") + " UTC"
+    return (f'<span class="tag" style="background:#f1f5f9; color:#334155; '
+            f'border:1px solid #cbd5e1; font-family:monospace; '
+            f'font-size:0.85em;">Generated {ts}</span>')
+
+
 def render_kpi(summary):
     return f"""
     <div id="panel-kpi" class="kpi-row">
@@ -2132,6 +2152,21 @@ def render_authors_table(authors):
     <script>
       (function() {{
         const A = {authors_js};
+
+        // v0.1.11: render a project_id as a clickable span that opens the
+        // shared project-detail drawer (window.showProjectDetail), which is
+        // wired to the Gantt's drawer. If that's not available, falls back
+        // to plain <code>.
+        function projectChip(pid) {{
+          const safe = String(pid).replace(/[<>"&]/g, '');
+          if (window.showProjectDetail) {{
+            return '<code style="cursor:pointer; text-decoration:underline; color:#1e40af;" '
+                 + 'onclick="window.showProjectDetail(\\'' + safe + '\\', \\'gantt-detail\\')">'
+                 + safe + '</code>';
+          }}
+          return '<code>' + safe + '</code>';
+        }}
+
         document.querySelectorAll('tr.authors-row').forEach(row => {{
           row.addEventListener('click', (e) => {{
             if (e.target.closest('a')) return;
@@ -2139,31 +2174,59 @@ def render_authors_table(authors):
             const author = A[aid];
             const drawer = document.getElementById('authors-detail');
             if (!author) {{ return; }}
-            if (!author.research_lines || author.research_lines.length === 0) {{
-              drawer.innerHTML = '<h4>' + author.name + '</h4>' +
-                '<p style="color:#666;">Participates in ' + author.project_count +
-                ' project(s) but no research lines. A project enters a research line only if it has ≥1 declared citation to or from another project.</p>' +
-                '<details style="margin-top:0.5rem;"><summary>Projects (' + author.projects.length + ')</summary>' +
-                '<ul>' + author.projects.map(p => '<li><code>' + p + '</code></li>').join('') + '</ul></details>';
-              return;
-            }}
-            const lines_html = author.research_lines.map(ln => {{
-              const authorProjs = ln.author_projects_in_line.map(p =>
-                '<li><code>' + p + '</code></li>').join('');
-              return '<div style="margin:0.7rem 0; padding:0.6rem; background:#f8fafc; border-left:3px solid #7c3aed; border-radius:3px;">' +
-                '<div style="font-weight:600;">' + ln.line_name + '</div>' +
-                '<div style="font-size:0.8em; color:#666;">' +
-                  ln.member_count + ' member projects · ' + ln.author_count + ' distinct authors · role: ' + ln.role +
-                '</div>' +
-                '<details style="margin-top:0.3rem;"><summary style="cursor:pointer; font-size:0.85em;">' +
-                  author.name + "'s projects in this line (" + ln.author_projects_in_line.length + ')' +
-                '</summary><ul style="margin-top:0.3rem;">' + authorProjs + '</ul></details>' +
-                '</div>';
-            }}).join('');
-            drawer.innerHTML = '<h4>' + author.name +
+
+            // v0.1.11: identify which projects are NOT in any research line
+            // (orphan projects — declared no citations to/from anyone).
+            // Helps explain the "I have N projects but only see K in lines"
+            // case Adam flagged.
+            const inLineProjs = new Set();
+            (author.research_lines || []).forEach(ln => {{
+              (ln.author_projects_in_line || []).forEach(p => inLineProjs.add(p));
+            }});
+            const allProjs = author.projects || [];
+            const orphanProjs = allProjs.filter(p => !inLineProjs.has(p));
+
+            // Header
+            let html = '<h4>' + author.name +
               ' <span style="font-weight:400; font-size:0.9em; color:#666;">(' +
-              author.research_lines.length + ' research line(s), ' +
-              author.project_count + ' project(s) total)</span></h4>' + lines_html;
+              author.project_count + ' project(s), ' +
+              (author.research_lines || []).length + ' research line(s))' +
+              '</span></h4>';
+
+            // Always show all projects, clickable, before the lines breakdown.
+            html += '<details open style="margin:0.5rem 0;">' +
+                    '<summary style="cursor:pointer;font-weight:600;">' +
+                    'All projects (' + allProjs.length + ') — click any to open detail' +
+                    '</summary><ul style="margin-top:0.3rem;">' +
+                    allProjs.map(p => '<li>' + projectChip(p) +
+                      (orphanProjs.includes(p) ? ' <span style="color:#999;font-size:0.85em;">(no declared citations)</span>' : '') +
+                      '</li>').join('') +
+                    '</ul></details>';
+
+            // Research lines breakdown (if any)
+            if ((author.research_lines || []).length > 0) {{
+              const lines_html = author.research_lines.map(ln => {{
+                const authorProjs = (ln.author_projects_in_line || []).map(p =>
+                  '<li>' + projectChip(p) + '</li>').join('');
+                return '<div style="margin:0.7rem 0; padding:0.6rem; background:#f8fafc; border-left:3px solid #7c3aed; border-radius:3px;">' +
+                  '<div style="font-weight:600;">' + ln.line_name + '</div>' +
+                  '<div style="font-size:0.8em; color:#666;">' +
+                    ln.member_count + ' member projects · ' + ln.author_count + ' distinct authors · role: ' + ln.role +
+                  '</div>' +
+                  '<details style="margin-top:0.3rem;"><summary style="cursor:pointer; font-size:0.85em;">' +
+                    author.name + "'s projects in this line (" + (ln.author_projects_in_line || []).length + ')' +
+                  '</summary><ul style="margin-top:0.3rem;">' + authorProjs + '</ul></details>' +
+                  '</div>';
+              }}).join('');
+              html += '<h4 style="margin-top:1rem;">Research lines</h4>' + lines_html;
+            }} else {{
+              html += '<p style="color:#666; margin-top:0.6rem;">No research lines — '
+                + 'this author has no declared citations to or from other projects in the corpus. '
+                + 'A project enters a research line only when at least one declared citation '
+                + 'connects it to another project.</p>';
+            }}
+
+            drawer.innerHTML = html;
           }});
         }});
       }})();
@@ -2719,23 +2782,39 @@ def render_research_lines_panel(lines, handoffs=None, subclusters=None):
         <span class="tag tag-real">citation-graph real</span>
       </div>
       <div class="panel-claim">
-        <strong>Definition (important — read before reading the table):</strong>
-        A "research line" here is a <strong>weakly-connected component in the
-        declared-citation graph</strong> — one project explicitly builds on
-        another via a declared citation. Citation-lineage, not topic-similarity.
-        <strong>Parameters in effect on this run:</strong>
-        cosine-similarity threshold for topic edges = 0.5 (used for Louvain
-        sub-cluster weighting inside each line, NOT for line discovery);
-        Louvain resolution = 1.5; minimum line size = 2 projects; minimum
-        sub-cluster size = 5 projects. Changing the cosine threshold only
-        affects sub-cluster density, not which projects land in which line.
-        The "Edges" column shows <span style="color:#1e40af;">citation<sub>c</sub></span>
-        and <span style="color:#047857;">topic<sub>t</sub></span> counts for
-        transparency — topic edges are observable but not load-bearing for
-        connectivity. <strong>Watch:</strong> research-line count is expected
-        to rise as independent investigation threads appear; sub-cluster
-        stability across runs is the signal that thematic threads are real.
-        <strong>Click a row</strong> for sub-cluster breakdowns.
+        <strong>How lines form:</strong> a research line is a
+        <strong>weakly-connected component in the declared-citation graph</strong>
+        (≥2 projects, with at least one declared citation between them).
+        Citation-lineage, not topic-similarity. A project enters a line ONLY
+        when its <code>references.md</code> declares a citation to another
+        project in the corpus, OR another project's <code>references.md</code>
+        cites it. Without such a citation, a project stays orphan — it does
+        NOT appear in this table even if its content overlaps thematically
+        with existing lines.
+        <br><br>
+        <strong>When this updates:</strong> on every scan. But because the
+        line graph is purely a function of declared citations, you'll see
+        the same lines run-to-run unless you've ADDED or REMOVED a citation
+        in some <code>references.md</code> since the last scan. New projects
+        without citations don't shift the topology; new citations between
+        existing projects can collapse two lines into one or split one in
+        two. The <em>edge-type labels</em> (deepening / branching / synthesis,
+        shown below in the Citation edge types panel) ARE LLM-classified and
+        re-run if any new edges appear.
+        <br><br>
+        <strong>Sub-clusters:</strong> for any line ≥5 members, Louvain
+        community detection (resolution 1.5) splits it into thematic
+        sub-clusters using topic-overlap edges (cosine sim ≥0.5 on
+        organism+method vocab signatures) as a weighting signal. Sub-cluster
+        density is observable but does NOT change line membership — that's
+        purely the citation graph.
+        <br><br>
+        The "Edges" column shows
+        <span style="color:#1e40af;">citation<sub>c</sub></span> and
+        <span style="color:#047857;">topic<sub>t</sub></span> counts for
+        transparency — only citation edges drive line discovery.
+        <strong>Click a row</strong> for sub-cluster breakdowns and member
+        projects.
       </div>
       <div style="overflow-x:auto;">
       <table class="sortable filterable data-table">
@@ -3447,7 +3526,11 @@ def render_author_interaction_panel(graph):
 
 def render_edge_type_panel(bundle):
     """Act-4 panel: how citation edges break down by type (deepening /
-    branching / synthesis / other). Colored bar chart + a clickable sample list."""
+    branching / synthesis / other). Colored bar chart + a clickable sample list.
+
+    v0.1.11: also renders a sortable+filterable table of all classifications
+    so users can search by src project, dst project, edge type, or rationale
+    text — addressing Adam's "I can't sort/filter this" feedback."""
     summary = bundle.get("summary", []) if bundle else []
     samples = bundle.get("samples", {}) if bundle else {}
     if not summary:
@@ -3455,6 +3538,35 @@ def render_edge_type_panel(bundle):
           <div class="panel-header"><h3>Citation edge types</h3></div>
           <p style="color:#666;">Awaiting post-hoc edge-type classification (requires --extract).</p></div>"""
     data_js = json.dumps({"summary": summary, "samples": samples})
+
+    # v0.1.11: flatten samples-by-type into one sortable+filterable table.
+    table_rows = []
+    for et, rows in samples.items():
+        for r in rows:
+            src = (r.get("src_project_id") or "").replace("<", "&lt;")
+            dst = (r.get("dst_project_id") or "").replace("<", "&lt;")
+            conf = float(r.get("confidence") or 0.0)
+            rationale = (r.get("rationale") or "").replace("<", "&lt;")
+            quote = (r.get("source_quote") or "").replace("<", "&lt;")
+            table_rows.append(
+                f'<tr><td>{src}</td><td>{dst}</td><td>{et}</td>'
+                f'<td>{conf:.2f}</td><td>{rationale}</td>'
+                f'<td><span style="color:#666;font-style:italic;">{quote[:200]}</span></td></tr>'
+            )
+    table_html = (
+        '<details style="margin-top:1rem;">'
+        '<summary style="cursor:pointer; font-weight:600;">'
+        f'All sample classifications ({len(table_rows)} rows) — '
+        'click to expand</summary>'
+        '<table class="sortable filterable">'
+        '<thead><tr>'
+        '<th>Source project</th><th>Cited project</th><th>Edge type</th>'
+        '<th>Confidence</th><th>Rationale</th><th>Source quote</th>'
+        '</tr></thead>'
+        f'<tbody>{"".join(table_rows)}</tbody>'
+        '</table>'
+        '</details>'
+    ) if table_rows else ""
     return f"""
     <div id="panel-edge-types" class="panel">
       <div class="panel-header">
@@ -3473,6 +3585,7 @@ def render_edge_type_panel(bundle):
         <h4>Sample classifications</h4>
         <p style="color:#666; font-style:italic;">Click a bar to see examples.</p>
       </div>
+      {table_html}
     </div>
     <script>
       (function() {{
@@ -4277,6 +4390,12 @@ def render_findings_panel(findings):
         </div>
         """)
 
+    # v0.1.11: surface the latest observed_at as a "Generated" badge so
+    # users can see whether the panel reflects this scan or an earlier one.
+    timestamps = [f.get("observed_at") for f in findings if f.get("observed_at")]
+    generated_at = max(timestamps) if timestamps else None
+    gen_badge = _generated_at_badge(generated_at)
+
     return f"""
     <div id="panel-findings" class="panel">
       <div class="panel-header">
@@ -4284,6 +4403,7 @@ def render_findings_panel(findings):
         <span class="tag" style="background:#fef3c7; color:#92400e; border:1px solid #d97706;">
           LLM-generated
         </span>
+        {gen_badge}
       </div>
       <div class="panel-claim" style="background:#fffbeb; border-left:4px solid #d97706;">
         <strong>Structural reads on the current warehouse — not numeric restatements.</strong>
@@ -4423,6 +4543,11 @@ def render_recommendations_panel(recs):
             """
         )
 
+    # v0.1.11: surface the latest observed_at as a "Generated" badge.
+    rec_timestamps = [r.get("observed_at") for r in recs if r.get("observed_at")]
+    rec_generated_at = max(rec_timestamps) if rec_timestamps else None
+    rec_gen_badge = _generated_at_badge(rec_generated_at)
+
     return f"""
     <div id="panel-recommendations" class="panel">
       <div class="panel-header">
@@ -4430,6 +4555,7 @@ def render_recommendations_panel(recs):
         <span class="tag" style="background:#fef3c7; color:#92400e; border:1px solid #d97706;">
           LLM-generated
         </span>
+        {rec_gen_badge}
       </div>
       <div class="panel-claim" style="background:#fffbeb; border-left:4px solid #d97706;">
         <strong>Treat as seed hypotheses, not action items.</strong>
