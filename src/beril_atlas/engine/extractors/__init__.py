@@ -264,6 +264,16 @@ class Extractor(ABC):
             result.mentions.extend(mentions)
             result.drift_candidates.extend(drifts)
         except lc.LLMValidationError as e:
+            # Pull finish_reason from the cached metadata if available; helps
+            # distinguish truncation ('length') from genuine malformed JSON.
+            finish_reason: Optional[str] = None
+            if cached is not None:
+                finish_reason = cached.response_metadata.get("finish_reason")
+            elif "chat_resp" in locals():  # fresh LLM call path
+                finish_reason = chat_resp.finish_reason
+            notes = f"Response parse failed: {e}"
+            if finish_reason:
+                notes = f"[finish_reason={finish_reason}] {notes}"
             result.drift_candidates.append(DriftCandidate(
                 project_id=section.project_id,
                 section_id=section_id,
@@ -272,7 +282,7 @@ class Extractor(ABC):
                 entity_kind="parse_error",
                 surface_form="<response parse failed>",
                 source_quote=response_content[:200],
-                llm_notes=f"Response parse failed: {e}",
+                llm_notes=notes,
                 vocab_version=vocab_version_str,
                 prompt_version=self.prompt_version,
                 model_id=self.model_id,

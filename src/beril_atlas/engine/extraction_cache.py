@@ -98,7 +98,19 @@ class ExtractionCache:
 
     def get(self, content: str, prompt_version: str, vocab_version: str,
             model_id: str) -> Optional[CachedExtraction]:
-        """Return the cached extraction for this key, or None on miss."""
+        """Return the cached extraction for this key, or None on miss.
+
+        Treats cached responses with finish_reason='length' as cache misses.
+        Such responses are truncated and re-parsing them is guaranteed to
+        fail; returning None forces a fresh LLM call with current
+        max_tokens (which v0.1.8 raised from 2000 to 8000). Successful
+        re-extraction overwrites the truncated row via the existing put()
+        ON CONFLICT upsert.
+
+        Caught 2026-04-26 on the BERDL hub: 10 cached truncated responses
+        from v0.1.7 kept returning as "cache hits" but failed re-parse on
+        every scan, persisting as parse_error drift candidates.
+        """
         h = _hash_content(content)
         key = _cache_key(h, prompt_version, vocab_version, model_id)
         row = self.con.execute("""
@@ -109,6 +121,14 @@ class ExtractionCache:
         """, [key]).fetchone()
         if row is None:
             return None
+
+        response_metadata = json.loads(row[6]) if row[6] else {}
+
+        # Truncated cached responses are guaranteed to fail re-parse —
+        # treat as cache miss so the caller fetches a fresh completion.
+        if response_metadata.get("finish_reason") == "length":
+            return None
+
         return CachedExtraction(
             cache_key=row[0],
             content_hash=row[1],
@@ -116,7 +136,7 @@ class ExtractionCache:
             vocab_version=row[3],
             model_id=row[4],
             response_content=row[5] or "",
-            response_metadata=json.loads(row[6]) if row[6] else {},
+            response_metadata=response_metadata,
             cached_at=row[7],
         )
 

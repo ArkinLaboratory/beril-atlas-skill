@@ -32,7 +32,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "beril-atlas-skill"
-version = "0.1.7"
+version = "0.1.8"
 description = "BERIL Atlas — read-only retrofit analyzer for a local BERIL deployment, distributed as a Claude Code skill + Python engine."
 readme = "README.md"
 requires-python = ">=3.10"

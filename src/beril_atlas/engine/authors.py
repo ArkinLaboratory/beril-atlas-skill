@@ -41,6 +41,14 @@ _ORCID_RE = re.compile(r"(\d{4}-\d{4}-\d{4}-\d{3}[\dX])")
 # A bullet that likely introduces an author: starts with `-` or `*`.
 _BULLET_LEADER = re.compile(r"^[-*]\s+(.+?)$", re.MULTILINE)
 
+# Name/affiliation separator: em-dash (—), en-dash (–), or hyphen (-)
+# surrounded by whitespace. The regex tolerates double spaces (some BERIL
+# project READMEs have `Name  — Affiliation` with two leading spaces).
+# Caught 2026-04-26 on BERDL hub: 20 rows had the entire
+# `Adam Arkin  — U.C. Berkeley / Lawrence Berkeley National Laboratory`
+# string stored as canonical_name with affiliation NULL.
+_DASH_SEP = re.compile(r"\s+[\u2014\u2013\-]\s+")
+
 
 @dataclass
 class Author:
@@ -110,11 +118,22 @@ def parse_author_bullet(bullet_text: str,
 
     body = body.strip()
 
-    # Split on first comma to separate name from affiliation
+    # Split name from affiliation. Two separator conventions seen in BERIL
+    # projects:
+    #   1. comma:    "Name (orcid), Affiliation"
+    #   2. dash:     "Name — Affiliation"  (em-dash, en-dash, or spaced
+    #                                       hyphen; v0.1.8 added this)
+    # Pre-v0.1.8 the dash form fell through and the entire line was stored
+    # in canonical_name with affiliation NULL.
     name_part: str
     affiliation: Optional[str]
     if "," in body:
         head, tail = body.split(",", 1)
+        name_part = _clean_name(head)
+        aff = tail.strip()
+        affiliation = aff if aff else None
+    elif _DASH_SEP.search(body):
+        head, tail = _DASH_SEP.split(body, maxsplit=1)
         name_part = _clean_name(head)
         aff = tail.strip()
         affiliation = aff if aff else None

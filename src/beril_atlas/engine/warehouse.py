@@ -16,6 +16,7 @@ Design note: §7 for the schema; §10 for BERIL-prime sync SHAs.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -409,12 +410,27 @@ def _section_id(proj: str, doc: str, h2: str, offset: int) -> str:
     return f"{proj}:{doc}:{h2}:{offset}"
 
 
-def _revision_id(proj: str, doc: str, label: str, offset: int = 0) -> str:
-    """Revision IDs include line offset because some projects have the same
-    version label appearing twice in the same doc (e.g., essential_metabolome
-    has TWO Revision History sections in its RESEARCH_PLAN, both containing v1).
-    The duplicate is real signal we want to preserve, not collapse."""
-    return f"{proj}:{doc}:{label}@{offset}"
+def _revision_id(proj: str, doc: str, label: str,
+                  change_description: str = "") -> str:
+    """Revision IDs are content-keyed, NOT byte-offset-keyed.
+
+    Pre-v0.1.8 we keyed by line_offset, which had the unintended consequence
+    that any edit to the source doc (above an existing revision) shifted all
+    offsets and invalidated post-hoc classifier caches downstream — paying
+    ~128 LLM calls per scan for revision_kinds reclassification on every
+    rescan. Caught 2026-04-26 on BERDL hub diagnostic.
+
+    The disambiguator (some projects have duplicate version labels in a
+    single doc, e.g., essential_metabolome has two `v1` entries in the same
+    RESEARCH_PLAN) is now a short content hash of the change_description.
+    Stable across doc edits unless the revision text itself changes.
+    Collisions across same-content revisions are vanishingly unlikely
+    given the description's natural-language length.
+    """
+    if not change_description:
+        return f"{proj}:{doc}:{label}"
+    h = hashlib.sha256(change_description.encode("utf-8")).hexdigest()[:8]
+    return f"{proj}:{doc}:{label}#{h}"
 
 
 def _notebook_id(proj: str, filename: str) -> str:
@@ -469,12 +485,21 @@ def populate_projects(con: duckdb.DuckDBPyConnection,
 def populate_revisions(con: duckdb.DuckDBPyConnection,
                         revisions: list[r_mod.Revision],
                         observed_at: dt.datetime) -> None:
-    """Idempotent: DELETE + INSERT. See populate_projects for semantics."""
+    """Idempotent: DELETE + INSERT. See populate_projects for semantics.
+
+    v0.1.8: also purges orphan rows from revision_kinds. With the
+    revision_id format change (offset → content hash), revision_kinds rows
+    keyed by the OLD format become unreachable. The purge keeps the cache
+    table clean and prevents the working set from growing across releases.
+    Existing classifications that match the new format survive (their
+    revision_id still corresponds to a row in project_revisions).
+    """
     con.execute("DELETE FROM project_revisions")
     rows = []
     for rev in revisions:
         rows.append((
-            _revision_id(rev.project_id, rev.source_doc, rev.version_label, rev.line_offset),
+            _revision_id(rev.project_id, rev.source_doc,
+                          rev.version_label, rev.change_description),
             rev.project_id,
             rev.source_doc,
             rev.version_label,
@@ -488,6 +513,20 @@ def populate_revisions(con: duckdb.DuckDBPyConnection,
         con.executemany(
             "INSERT INTO project_revisions VALUES (?,?,?,?,?,?,?,?,?)",
             rows)
+
+    # Purge orphan post-hoc classifier rows. revision_kinds may not exist
+    # yet on a fresh warehouse — guard with EXISTS.
+    try:
+        con.execute("""
+            DELETE FROM revision_kinds
+            WHERE revision_id NOT IN (
+                SELECT revision_id FROM project_revisions
+            )
+        """)
+    except duckdb.CatalogException:
+        # revision_kinds table not yet created (first scan against this
+        # warehouse). Nothing to purge.
+        pass
 
 
 def populate_authors(con: duckdb.DuckDBPyConnection,
