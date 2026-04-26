@@ -201,7 +201,10 @@ class UniversalExtractor(Extractor):
             claim_text = item.get("claim_text")
             if not claim_text:
                 return None, None
-            source_quote = item.get("source_quote", "")
+            # LLM may return source_quote: null (key present, value None).
+            # dict.get returns the None in that case, NOT the default.
+            # Coerce to "" so [:N] slicing below is safe.
+            source_quote = item.get("source_quote") or ""
             mention = Mention(
                 project_id=section.project_id,
                 section_id=section_id,
@@ -229,7 +232,8 @@ class UniversalExtractor(Extractor):
             axis = item.get("axis")
             if not label or not axis:
                 return None, None
-            evidence = item.get("evidence_quote", "")
+            # LLM may return evidence_quote: null. See note in conclusion branch.
+            evidence = item.get("evidence_quote") or ""
             mention = Mention(
                 project_id=section.project_id,
                 section_id=section_id,
@@ -253,7 +257,8 @@ class UniversalExtractor(Extractor):
         if not surface:
             return None, None
         proposed_canonical = item.get("canonical_name") or surface
-        source_quote = item.get("source_quote", "")[:300]
+        # LLM may return source_quote: null. See note in conclusion branch.
+        source_quote = (item.get("source_quote") or "")[:300]
 
         # Try vocab canonicalization
         canonical_entry = vocab.canonicalize(proposed_canonical) if vocab else None
