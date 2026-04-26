@@ -1,10 +1,11 @@
 ---
-description: Configure the BERIL Atlas skill — pick an LLM provider, set env vars, run a smoke test.
-argument-hint: (no arguments)
+name: beril-atlas-configure
+description: Configure the BERIL Atlas skill for this BERIL install — pick an LLM provider, set env vars in BERIL_ROOT/.env, and run a smoke test. Use once after `beril-atlas install-skill`, or any time credentials change.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
+user-invocable: true
 ---
 
-# /beril-atlas-configure
+# beril-atlas-configure
 
 Configure the BERIL Atlas skill for this BERIL install. Run this once after
 `beril-atlas install-skill .`, or any time credentials change.

@@ -1,15 +1,18 @@
 """`beril-atlas install-skill <BERIL_ROOT>` — copy shipped skill files into BERIL.
 
-Copies SKILL.md, commands/, prompts/, references/, and vocab-shipped/ from
-the installed package's bundled skill data into
-`<BERIL_ROOT>/.claude/skills/beril-atlas/`.
+Walks the package's `skills/*/` directory and copies each sibling skill into
+`<BERIL_ROOT>/.claude/skills/<skill_name>/`. As of v0.1.6 we ship three skills:
 
-PRESERVES (never overwrites):
+  - beril-atlas              (umbrella — orientation + engine self-state)
+  - beril-atlas-configure    (slash command for one-time setup)
+  - beril-atlas-update       (slash command for the periodic rescan loop)
+
+For the umbrella `beril-atlas` only, also creates and PRESERVES (never
+overwrites) these install-local subdirectories:
+
   - vocab-local/   (user-authored vocab overrides)
   - state/         (runtime extraction cache, drift history)
   - contrib/       (pending BIDIR contributions)
-
-CREATES if missing: vocab-local/ (with README), state/, contrib/.
 
 After copy succeeds: optionally invokes a configure smoke-test in advisory
 mode. Advisory — non-zero exit from the smoke test does NOT roll back the
@@ -28,14 +31,19 @@ from typing import Iterable
 from beril_atlas import __version__, discovery
 
 
-# Directories inside the shipped skill/ dir that should be overwritten on install
-_SHIPPED_SUBDIRS = ("commands", "prompts", "references", "vocab-shipped")
+# The umbrella skill (engine self-state lives here). Sibling slash-command
+# skills are discovered dynamically by walking the shipped skills/ dir.
+_UMBRELLA_SKILL = "beril-atlas"
 
-# Directories that must exist in the installed skill dir but are install-local
-# (never shipped, never overwritten)
+# Inside the umbrella skill source dir, these subdirs ship as package data and
+# get full-replaced on install.
+_SHIPPED_SUBDIRS = ("prompts", "references", "vocab-shipped")
+
+# Inside the umbrella skill install target, these subdirs must exist but are
+# install-local (never shipped, never overwritten).
 _LOCAL_SUBDIRS = ("vocab-local", "state", "contrib")
 
-# Files at the skill-dir root that ship
+# Files at the umbrella skill-dir root that ship.
 _SHIPPED_FILES = ("SKILL.md",)
 
 
@@ -44,9 +52,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         "install-skill",
         help="Copy shipped skill files into a BERIL checkout.",
         description=(
-            "Copy the beril-atlas skill files from the installed package "
-            "into <BERIL_ROOT>/.claude/skills/beril-atlas/. "
-            "Preserves vocab-local/, state/, and contrib/ subdirectories."
+            "Copy the beril-atlas, beril-atlas-configure, and "
+            "beril-atlas-update skills from the installed package into "
+            "<BERIL_ROOT>/.claude/skills/<skill_name>/. "
+            "Preserves vocab-local/, state/, and contrib/ subdirectories "
+            "inside the umbrella beril-atlas skill."
         ),
     )
     p.add_argument(
@@ -82,12 +92,9 @@ def run(args: argparse.Namespace) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    skill_target = discovery.get_skill_dir(beril_root)
-    skill_target.mkdir(parents=True, exist_ok=True)
-
-    # Locate the shipped skill/ dir inside the installed package.
+    # Locate the shipped skills/ dir inside the installed package.
     try:
-        skill_src_trav = resources.files("beril_atlas") / "skill"
+        skills_src_trav = resources.files("beril_atlas") / "skills"
     except Exception as e:
         print(
             f"Error: could not locate shipped skill data inside beril_atlas "
@@ -96,24 +103,55 @@ def run(args: argparse.Namespace) -> int:
         )
         return 2
 
+    skills_root = beril_root / ".claude" / "skills"
+    skills_root.mkdir(parents=True, exist_ok=True)
+
+    installed: list[str] = []
+
     # importlib.resources.Traversable → real Path via as_file when possible.
-    with resources.as_file(skill_src_trav) as skill_src:
-        if not skill_src.is_dir():
+    with resources.as_file(skills_src_trav) as skills_src:
+        if not skills_src.is_dir():
             print(
-                f"Error: shipped skill data at {skill_src} is not a directory. "
-                f"Package build may be broken.",
+                f"Error: shipped skills data at {skills_src} is not a "
+                f"directory. Package build may be broken.",
                 file=sys.stderr,
             )
             return 2
 
-        _copy_shipped_files(skill_src, skill_target, force=args.force)
-        _copy_shipped_subdirs(skill_src, skill_target, force=args.force)
+        # Walk every shipped skill folder under skills/*/ and copy it.
+        for skill_src_dir in sorted(skills_src.iterdir()):
+            if not skill_src_dir.is_dir():
+                continue
+            if skill_src_dir.name.startswith("."):
+                continue
 
-    _ensure_local_subdirs(skill_target)
+            skill_name = skill_src_dir.name
+            skill_target = skills_root / skill_name
+            skill_target.mkdir(exist_ok=True)
 
-    print(f"Skill files installed to: {skill_target}")
-    print(f"Preserved (never overwritten): {', '.join(_LOCAL_SUBDIRS)}")
+            _copy_shipped_files(skill_src_dir, skill_target, force=args.force)
+
+            if skill_name == _UMBRELLA_SKILL:
+                # Umbrella ships subdirs (prompts/, references/, vocab-shipped/)
+                # AND has install-local subdirs to preserve (vocab-local/, etc.)
+                _copy_shipped_subdirs(skill_src_dir, skill_target,
+                                       force=args.force)
+                _ensure_local_subdirs(skill_target)
+            # Sibling slash-command skills are SKILL.md-only; nothing else
+            # to copy or create.
+
+            installed.append(skill_name)
+
+    print(f"Skills installed to: {skills_root}")
+    for name in installed:
+        marker = " (umbrella)" if name == _UMBRELLA_SKILL else ""
+        print(f"  - {name}{marker}")
+    print(f"Preserved in {_UMBRELLA_SKILL}/ (never overwritten): "
+          f"{', '.join(_LOCAL_SUBDIRS)}")
     print(f"Package version: {__version__}")
+
+    # Keep the legacy variable name around for the smoke test reference.
+    skill_target = skills_root / _UMBRELLA_SKILL
 
     if args.no_smoke_test:
         return 0

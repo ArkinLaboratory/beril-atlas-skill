@@ -102,13 +102,26 @@ done at the current `prompt_version`.
   layout (risk F1).
 - Per-act LLM findings summary (under discussion).
 
-## CLI actions
+## Sibling slash-command skills
 
-The atlas is driven by `beril-atlas` CLI commands. There is no
-`/beril-atlas-scan` or `/beril-atlas-update` slash command in v0.1 —
-`/beril-atlas-configure` is the only shipped slash command. To rescan
-from inside a Claude Code session in BERIL_ROOT, ask Claude to "rescan
-the atlas" and it will invoke `beril-atlas scan` etc. via Bash.
+Two sibling skills ship alongside this umbrella, each registered as a
+Claude Code slash command:
+
+- `/beril-atlas-configure` — one-time setup for this BERIL install
+  (provider selection, env vars in `BERIL_ROOT/.env`, smoke test).
+  Run once after `beril-atlas install-skill .`, or any time credentials
+  change. See `<BERIL_ROOT>/.claude/skills/beril-atlas-configure/SKILL.md`.
+- `/beril-atlas-update` — periodic rescan against `~/.beril-atlas/latest`.
+  Cache stays hot across runs; only new or changed content costs LLM calls.
+  Run after a `/submit` and merge, after editing a project doc, or whenever
+  the dashboard feels stale. See
+  `<BERIL_ROOT>/.claude/skills/beril-atlas-update/SKILL.md`.
+
+The two slash commands are thin wrappers around the `beril-atlas` CLI; you
+can invoke the same operations directly from a shell using the CLI
+sections below.
+
+## CLI actions
 
 All commands below assume you're in BERIL_ROOT (the directory containing
 `projects/` and `.claude/`). Use `beril-atlas --beril-root <path>` or set

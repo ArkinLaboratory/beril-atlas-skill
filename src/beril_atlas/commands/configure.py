@@ -1,7 +1,7 @@
 """`beril-atlas configure` — scriptable fallback for the slash command flow.
 
 The slash command `/beril-atlas-configure` is the primary UX (see
-src/beril_atlas/skill/commands/beril-atlas-configure.md). This CLI command
+src/beril_atlas/skills/beril-atlas-configure/SKILL.md). This CLI command
 exists as a fallback for users who prefer a terminal-driven flow or for
 CI/automation.
 

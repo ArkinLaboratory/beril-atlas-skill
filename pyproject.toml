@@ -32,7 +32,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "beril-atlas-skill"
-version = "0.1.5"
+version = "0.1.6"
 description = "BERIL Atlas — read-only retrofit analyzer for a local BERIL deployment, distributed as a Claude Code skill + Python engine."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -176,11 +176,10 @@ Repository = "https://github.com/ArkinLaboratory/beril-atlas-skill.git"
 [tool.hatch.build.targets.wheel]
 packages = ["src/beril_atlas"]
 
-# The shipped skill directory (SKILL.md, prompts, vocab-shipped, references)
-# lives inside the package at src/beril_atlas/skill/ and ships as package
-# data. Accessed at runtime via importlib.resources.
-# Task #3 will determine whether we need explicit force-include here once
-# the directory structure is finalized.
+# The shipped skills tree lives inside the package at src/beril_atlas/skills/
+# (one folder per shipped Claude Code skill — beril-atlas umbrella plus
+# beril-atlas-configure and beril-atlas-update sibling skills as of v0.1.6).
+# Accessed at runtime via importlib.resources.
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -195,9 +194,9 @@ exclude = [
     "**/*.pyc",
     "**/.DS_Store",
     # State directories never ship — belt-and-suspenders alongside .gitignore.
-    "src/beril_atlas/skill/state",
-    "src/beril_atlas/skill/vocab-local",
-    "src/beril_atlas/skill/contrib",
+    "src/beril_atlas/skills/beril-atlas/state",
+    "src/beril_atlas/skills/beril-atlas/vocab-local",
+    "src/beril_atlas/skills/beril-atlas/contrib",
 ]
 
 # ----------------------------------------------------------------------

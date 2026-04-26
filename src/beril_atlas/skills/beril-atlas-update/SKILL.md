@@ -1,10 +1,11 @@
 ---
-description: Re-run the atlas scan + metrics + render against the working dashboard at ~/.beril-atlas/latest.
-argument-hint: (no arguments)
+name: beril-atlas-update
+description: Re-run the atlas scan + metrics + render against the working dashboard at ~/.beril-atlas/latest. Use when the dashboard feels stale — after a /submit and merge, after editing a project doc, or as a periodic refresh.
 allowed-tools: Bash, Read, AskUserQuestion
+user-invocable: true
 ---
 
-# /beril-atlas-update
+# beril-atlas-update
 
 Re-run the atlas pipeline against the current state of this BERIL install.
 Updates the working dashboard at `~/.beril-atlas/latest/dashboard.html`.
