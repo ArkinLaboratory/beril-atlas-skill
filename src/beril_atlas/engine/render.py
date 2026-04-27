@@ -458,6 +458,67 @@ def fetch_top_databases(con, limit=15):
     return [{"canonical_id": r[0], "mentions": r[1], "projects": r[2]} for r in rows]
 
 
+def fetch_project_database_matrix(con):
+    """v0.3.10: project × database mention-count matrix for the
+    "data resources used together" heatmap (Act-2 panel-database-matrix).
+
+    Both axes are sorted by total mention count descending — the
+    most-prolific projects + most-used databases land in the top-left,
+    so the eye reads the high-traffic intersections first. Sparse rows
+    (project mentions zero databases) and sparse columns (database not
+    mentioned by any project) are excluded so the matrix isn't padded
+    with empty bands.
+
+    Returns:
+        {
+          "projects": list[str]        — row labels, sorted by row-sum desc
+          "databases": list[str]       — col labels, sorted by col-sum desc
+          "matrix": list[list[int]]    — matrix[i][j] = mention count of
+                                          databases[j] in projects[i]
+          "project_totals": list[int]  — row totals (parallel to projects)
+          "database_totals": list[int] — col totals (parallel to databases)
+        }
+    """
+    rows = con.execute("""
+        SELECT project_id, canonical_id, COUNT(*) AS n
+        FROM entity_mentions
+        WHERE entity_kind = 'database'
+          AND canonical_id NOT LIKE 'proposed:%'
+        GROUP BY project_id, canonical_id
+    """).fetchall()
+    if not rows:
+        return {"projects": [], "databases": [], "matrix": [],
+                "project_totals": [], "database_totals": []}
+
+    # Aggregate row/col sums for sort keys
+    project_totals: dict = {}
+    database_totals: dict = {}
+    cells: dict = {}  # (project_id, db_id) → count
+    for pid, db_id, n in rows:
+        project_totals[pid] = project_totals.get(pid, 0) + n
+        database_totals[db_id] = database_totals.get(db_id, 0) + n
+        cells[(pid, db_id)] = n
+
+    # Sort axes by total descending, ties broken alphabetically for stability.
+    projects = sorted(project_totals.keys(),
+                       key=lambda p: (-project_totals[p], p))
+    databases = sorted(database_totals.keys(),
+                        key=lambda d: (-database_totals[d], d))
+
+    # Materialize the matrix in projects × databases order.
+    matrix = [
+        [cells.get((p, d), 0) for d in databases]
+        for p in projects
+    ]
+    return {
+        "projects": projects,
+        "databases": databases,
+        "matrix": matrix,
+        "project_totals": [project_totals[p] for p in projects],
+        "database_totals": [database_totals[d] for d in databases],
+    }
+
+
 def fetch_question_type_matrix(con):
     """Build a 6×5 (domain × mode) counts matrix from question-type mentions.
     Returns dict with 'domains' (list), 'modes' (list), and 'matrix' (2D list).
@@ -4875,6 +4936,133 @@ def render_topic_trends_panel(trends, title, kind, panel_id, csv_name):
     """
 
 
+def render_project_database_matrix_panel(bundle):
+    """v0.3.10: Act-2 panel — projects × databases mention-count heatmap.
+
+    Picks Option C from the v0.3.9 design discussion (matrix > bipartite >
+    force-directed): deterministic across renders, sortable axes, fits
+    the existing dashboard idiom (already several heatmaps). Surfaces:
+      - Coverage patterns (universally-used vs niche databases)
+      - Project resource stacks (each row is one project's database mix)
+      - Outliers (a single dark cell in an otherwise empty row = a
+        project relying on a database nobody else uses)
+
+    Sort: both axes by total mention count descending, ties broken
+    alphabetically. High-traffic intersections land top-left.
+
+    Hover: project_id, database, count.
+
+    Click: opens the project drawer for the row's project (cells of
+    sufficient interest reuse the existing window.showProjectDetail
+    primitive).
+
+    Layout: height grows with row count to keep cells readable on big
+    corpora; width capped at the panel width with x-axis tick rotation
+    when database labels start to crowd.
+    """
+    projects = bundle.get("projects", [])
+    databases = bundle.get("databases", [])
+    matrix = bundle.get("matrix", [])
+    if not projects or not databases:
+        return """<div id="panel-database-matrix" class="panel">
+          <div class="panel-header"><h3>Project × database matrix</h3></div>
+          <p style="color:#666;">Awaiting Phase 2b extraction — no database mentions yet.</p></div>"""
+
+    proj_totals = bundle.get("project_totals", [])
+    db_totals = bundle.get("database_totals", [])
+    data_js = json.dumps({
+        "projects": projects,
+        "databases": databases,
+        "matrix": matrix,
+        "project_totals": proj_totals,
+        "database_totals": db_totals,
+    })
+    n_projects = len(projects)
+    n_databases = len(databases)
+    # Row height ~22px keeps project_ids legible without enormous panels.
+    chart_height = max(420, n_projects * 22 + 120)
+    return f"""
+    <div id="panel-database-matrix" class="panel">
+      <div class="panel-header">
+        <h3>Project × database matrix — which projects use which databases {_csv_link('database_per_project')}</h3>
+        <span class="tag tag-real">real</span>
+      </div>
+      <div class="panel-claim">
+        Heatmap of database mentions per project. Both axes are sorted by
+        total mention count descending, so the most-prolific projects
+        cluster at the top and the most-used databases cluster on the
+        left. Cell color is mention count (white = zero, dark green = many).
+        <strong>Hover</strong> any cell for project + database + count.
+        <strong>Click</strong> a row label to open that project's drawer.
+        Sparse-row projects (mentioning zero databases) and sparse-column
+        databases (nobody mentions them) are excluded from the matrix —
+        they would appear as empty bands. {n_projects} projects ×
+        {n_databases} databases shown.
+      </div>
+      <div id="chart-database-matrix" class="chart"></div>
+    </div>
+    <script>
+      (function() {{
+        const D = {data_js};
+        const trace = {{
+          type: 'heatmap',
+          z: D.matrix,
+          x: D.databases,
+          y: D.projects,
+          colorscale: [
+            [0,    '#ffffff'],
+            [0.05, '#d1fae5'],
+            [0.30, '#10b981'],
+            [1,    '#047857'],
+          ],
+          colorbar: {{title: 'Mentions', thickness: 12}},
+          hovertemplate:
+            '<b>%{{y}}</b><br>' +
+            'database: <b>%{{x}}</b><br>' +
+            'mentions: %{{z}}<extra></extra>',
+        }};
+        Plotly.newPlot('chart-database-matrix', [trace], {{
+          margin:{{l:200,r:30,t:30,b:140}},
+          xaxis:{{
+            title:'Database (canonical_id) — column total in tooltip',
+            tickangle: -40,
+            automargin: true,
+          }},
+          yaxis:{{
+            title:'Project',
+            automargin: true,
+            // Plotly puts y[0] at the bottom by default; reverse so the
+            // most-prolific project (sorted to projects[0]) lands on top.
+            autorange: 'reversed',
+          }},
+          height: {chart_height},
+        }}, {{responsive:true, displayModeBar:false}});
+
+        // Click a row label → open project drawer. Plotly doesn't expose
+        // a clean "y-axis tick clicked" event, so we delegate via the SVG
+        // tick-text elements after layout settles.
+        function wireRowLabelClicks() {{
+          const ticks = document.querySelectorAll(
+            '#chart-database-matrix .yaxislayer-above text');
+          ticks.forEach(t => {{
+            t.style.cursor = 'pointer';
+            t.style.fill = '#1e40af';
+            t.addEventListener('click', () => {{
+              const pid = t.textContent.trim();
+              if (window.showProjectDetail) {{
+                window.showProjectDetail(pid, null);
+              }}
+            }});
+          }});
+        }}
+        // Plotly emits afterplot once layout is done.
+        document.getElementById('chart-database-matrix')
+          .on('plotly_afterplot', wireRowLabelClicks);
+      }})();
+    </script>
+    """
+
+
 def render_question_type_heatmap(matrix_bundle):
     """6x5 domain × mode heatmap of question-type projects."""
     domains = matrix_bundle["domains"]
@@ -5752,6 +5940,10 @@ def main(argv=None):
                              if not partial_phase_2b else [])
     whats_stuck = fetch_whats_stuck(con)
     untracked_projects = fetch_untracked_projects(con) if not partial_phase_2b else []
+    database_matrix = (fetch_project_database_matrix(con)
+                       if not partial_phase_2b else
+                       {"projects": [], "databases": [], "matrix": [],
+                        "project_totals": [], "database_totals": []})
     metrics_to_watch = fetch_metrics_to_watch(con)
     edge_type_bundle = fetch_edge_type_summary(con)
     revision_kind_bundle = fetch_revision_kind_summary(con)
@@ -5791,6 +5983,7 @@ def main(argv=None):
                                        "Database trends — cumulative mentions over time",
                                        "database", "panel-trends-databases",
                                        "top_databases_by_mention"),
+            render_project_database_matrix_panel(database_matrix),
             render_top_entities_bar(functions, "Top functions (pathways / processes / regulatory)",
                                      "function", "panel-top-functions",
                                      "top_functions_by_mention"),
@@ -5865,6 +6058,7 @@ def main(argv=None):
       <li><a href="#panel-trends-methods" class="{'disabled' if partial_phase_2b else ''}" title="{'Awaiting Phase 2b extraction' if partial_phase_2b else 'Method trends over time'}">↳ Method trends</a></li>
       <li><a href="#panel-top-databases" class="{'disabled' if partial_phase_2b else ''}" title="{'Awaiting Phase 2b extraction' if partial_phase_2b else 'Top databases'}">Top databases</a></li>
       <li><a href="#panel-trends-databases" class="{'disabled' if partial_phase_2b else ''}" title="{'Awaiting Phase 2b extraction' if partial_phase_2b else 'Database trends over time'}">↳ Database trends</a></li>
+      <li><a href="#panel-database-matrix" class="{'disabled' if partial_phase_2b else ''}" title="{'Awaiting Phase 2b extraction' if partial_phase_2b else 'Project × database matrix'}">↳ Project × database matrix</a></li>
       <li><a href="#panel-top-functions" class="{'disabled' if partial_phase_2b else ''}" title="{'Awaiting v2 extraction' if partial_phase_2b else 'Top biological functions'}">Top functions</a></li>
       <li><a href="#panel-trends-functions" class="{'disabled' if partial_phase_2b else ''}" title="{'Awaiting v2 extraction' if partial_phase_2b else 'Function trends over time'}">↳ Function trends</a></li>
       <li><a href="#panel-top-journals" class="{'disabled' if partial_phase_2b else ''}" title="{'Awaiting v2 extraction' if partial_phase_2b else 'Top journals cited'}">Top journals</a></li>

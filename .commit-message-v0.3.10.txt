@@ -1,0 +1,77 @@
+v0.3.10: Project × database matrix heatmap (Task #42)
+
+Adam asked for a "tenant/databases used together graph: projects as
+hubs, databases as spokes or something" on 2026-04-27. Three layout
+options were considered (bipartite parallel coords, force-directed
+network, matrix heatmap). v0.3.10 ships the matrix heatmap (Option C)
+based on the design discussion: deterministic across renders, fits
+the existing dashboard idiom (already several heatmaps), and surfaces
+coverage patterns + outliers + project resource stacks all in one
+view.
+
+Force-directed clustering and bipartite parallel coordinates were
+explicitly NOT shipped — they're deferred until the matrix proves
+insufficient. The matrix's sortable axes already partially answer the
+clustering question (sort projects by row similarity to group similar
+stacks adjacent), and force-directed adds non-determinism that costs
+more than it gives at 58 × 30 scale.
+
+## Implementation
+
+**fetch_project_database_matrix(con)** — renders entity_mentions where
+entity_kind='database' into a matrix:
+  - Both axes sorted by total mention count descending, ties broken
+    alphabetically for stable output across runs.
+  - Sparse-row projects (zero database mentions) and sparse-column
+    databases (nobody mentions them) excluded — they would render as
+    empty bands.
+  - Excludes proposed:* canonical_ids (LLM hallucinations awaiting
+    drift adjudication; not real databases).
+  - Returns projects[], databases[], matrix[i][j], project_totals[],
+    database_totals[].
+
+**render_project_database_matrix_panel(bundle)** — Plotly heatmap:
+  - Color: white → light green → dark green by mention count
+    (white = 0 to encourage zero-cell readability).
+  - Y-axis autorange='reversed' so projects[0] (most-prolific) sits
+    on top, not bottom (Plotly default flips this).
+  - X-axis tick angle -40 with automargin to keep long canonical_ids
+    legible without overlapping.
+  - Hover: project_id, database canonical_id, mention count.
+  - Click handler: row labels are clickable, opens window.showProjectDetail
+    drawer (the existing v0.2 entity navigation primitive).
+  - Height grows with row count: max(420, n_projects × 22 + 120) so
+    the matrix doesn't crush rows on big corpora.
+
+**Wired into Act-2** between Database trends and Top functions, with
+sidebar link "↳ Project × database matrix" under Database trends.
+
+## Tests (6 new, 148/148 passing)
+
+`tests/unit/test_v0310_database_matrix.py`:
+- fetch returns matrix sorted by total descending on both axes
+- **matrix cell orientation lock-in**: matrix[i][j] = projects[i] ×
+  databases[j]. Off-by-one or transposed axes would silently render
+  the heatmap with wrong correlations — the test pre-seeds 5 distinct
+  cell values and asserts each lands at the right index.
+- proposed:* canonical_ids excluded
+- empty warehouse → empty bundle (no crash)
+- render with data emits the heatmap trace + reversed autorange +
+  click handler
+- render empty state shows the awaiting-extraction message; does NOT
+  emit chart-database-matrix div (would Plotly-error against empty data).
+
+## Smoke render
+
+End-to-end render against a 3-project synthetic warehouse with mixed
+database mentions confirms the panel + sidebar link both appear in
+the rendered HTML, autorange is reversed (most-prolific on top), and
+the heatmap trace is properly wired with hover + click.
+
+## Backward compatibility
+
+- No schema changes. Existing warehouses render unchanged for all
+  pre-v0.3.10 panels.
+- New panel reads the existing entity_mentions table; no migration.
+- partial_phase_2b path returns the empty bundle so pre-extraction
+  warehouses don't crash.
