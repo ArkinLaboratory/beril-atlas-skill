@@ -74,6 +74,12 @@ CREATE TABLE IF NOT EXISTS projects (
     -- Derived (populated by join with revisions + REVIEW frontmatter)
     start_date          DATE,
     completion_date     DATE,
+    -- v0.3.2: latest activity across ALL revisions (any source_doc) — this
+    -- is the column trend panels should use as their X-axis to surface
+    -- in-flight projects without requiring a closing RESEARCH_PLAN
+    -- revision. completion_date is the narrower "RESEARCH_PLAN finished"
+    -- semantic; effective_completion_date is "any activity, anywhere."
+    effective_completion_date DATE,
     revision_depth      INTEGER,
     review_date         DATE,
     review_reviewer     VARCHAR,
@@ -383,6 +389,10 @@ def create_schema(con: duckdb.DuckDBPyConnection) -> None:
     _MIGRATIONS = [
         # so_what_detail added with L7 prompt v2 (2026-04-19)
         "ALTER TABLE findings ADD COLUMN IF NOT EXISTS so_what_detail VARCHAR",
+        # effective_completion_date added in v0.3.2 (2026-04-27) so trend
+        # panels can surface in-flight projects without requiring a closing
+        # RESEARCH_PLAN revision.
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS effective_completion_date DATE",
     ]
     for m in _MIGRATIONS:
         try:
@@ -885,7 +895,8 @@ def enrich_projects(con: duckdb.DuckDBPyConnection) -> None:
     """
     import yaml
 
-    # Revision-derived stats
+    # Revision-derived stats. completion_date is the narrower
+    # "RESEARCH_PLAN finished" semantic (max revision date in RESEARCH_PLAN).
     con.execute("""
         UPDATE projects p
         SET start_date = t.min_date,
@@ -898,6 +909,23 @@ def enrich_projects(con: duckdb.DuckDBPyConnection) -> None:
                    COUNT(*) AS cnt
             FROM project_revisions
             WHERE source_doc = 'RESEARCH_PLAN'
+            GROUP BY project_id
+        ) t
+        WHERE p.project_id = t.project_id
+    """)
+
+    # v0.3.2: effective_completion_date = latest activity across ALL
+    # revisions (any source_doc — RESEARCH_PLAN, REPORT, REVIEW). This is
+    # what trend panels should use as their X-axis. A project with a
+    # REPORT revision in April but no closing RESEARCH_PLAN revision still
+    # surfaces in trend plots at its April activity month. Falls back to
+    # NULL only when the project has zero parsed revisions anywhere.
+    con.execute("""
+        UPDATE projects p
+        SET effective_completion_date = t.max_date
+        FROM (
+            SELECT project_id, MAX(version_date) AS max_date
+            FROM project_revisions
             GROUP BY project_id
         ) t
         WHERE p.project_id = t.project_id

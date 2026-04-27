@@ -520,19 +520,22 @@ def fetch_question_type_matrix(con):
 
 
 def fetch_discoveries_timeline(con):
-    """Per-completion-month cumulative conclusions broken down by claim_type.
-    Only counts projects with a non-null completion_date. Returns a list of
-    (month_iso, claim_type, cumulative_count) tuples sorted by (month, type)."""
+    """Per-month cumulative conclusions broken down by claim_type.
+
+    v0.3.2: uses effective_completion_date (latest revision in ANY source
+    doc) so in-flight projects with REPORT but no closing RESEARCH_PLAN
+    revision still surface on the timeline. Pre-v0.3.2 used the narrower
+    completion_date which hid April work."""
     rows = con.execute("""
         WITH dated_conclusions AS (
-          SELECT strftime(p.completion_date, '%Y-%m') AS month,
+          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
                  COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
                           'unclassified') AS claim_type,
                  em.mention_id
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.completion_date IS NOT NULL
+            AND p.effective_completion_date IS NOT NULL
         ),
         per_month AS (
           SELECT month, claim_type, COUNT(*) AS n
@@ -564,14 +567,14 @@ def fetch_topic_trends(con, kind: str, top_k: int = 10):
         ),
         per_month AS (
           SELECT em.canonical_id,
-                 strftime(p.completion_date, '%Y-%m') AS month,
+                 strftime(p.effective_completion_date, '%Y-%m') AS month,
                  COUNT(*) AS n
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = ?
             AND em.canonical_id NOT LIKE 'proposed:%'
             AND em.canonical_id IN (SELECT canonical_id FROM ranked)
-            AND p.completion_date IS NOT NULL
+            AND p.effective_completion_date IS NOT NULL
           GROUP BY em.canonical_id, month
         )
         SELECT canonical_id, month,
@@ -597,9 +600,10 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
     """Per (completion-month, claim_type) bucket: individual conclusion claims
     with their project + source quote. Drives the click-to-see drawer on the
     discoveries timeline. Limited per cell to keep the embedded JSON small."""
+    # v0.3.2: effective_completion_date so April work surfaces.
     rows = con.execute(f"""
         WITH dated AS (
-          SELECT strftime(p.completion_date, '%Y-%m') AS month,
+          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
                  COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
                           'unclassified') AS claim_type,
                  em.project_id,
@@ -608,7 +612,7 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
                  em.surface_form AS claim_text,
                  em.source_quote,
                  ROW_NUMBER() OVER (
-                   PARTITION BY strftime(p.completion_date, '%Y-%m'),
+                   PARTITION BY strftime(p.effective_completion_date, '%Y-%m'),
                                 COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
                                          'unclassified')
                    ORDER BY em.project_id, em.mention_id
@@ -616,7 +620,7 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.completion_date IS NOT NULL
+            AND p.effective_completion_date IS NOT NULL
         )
         SELECT month, claim_type, project_id, source_doc, source_section,
                claim_text, source_quote
@@ -1714,13 +1718,15 @@ def fetch_negative_result_rate(con):
     }
     """
     by_month = []
+    # v0.3.2: effective_completion_date so April work surfaces.
     for month, negative, total in con.execute("""
         WITH dated AS (
-          SELECT strftime(p.completion_date, '%Y-%m') AS month,
+          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
                  json_extract_string(em.extra_json, '$.claim_type') AS ct
           FROM entity_mentions em
           JOIN projects p USING(project_id)
-          WHERE em.entity_kind = 'conclusion' AND p.completion_date IS NOT NULL
+          WHERE em.entity_kind = 'conclusion'
+            AND p.effective_completion_date IS NOT NULL
         )
         SELECT month,
                COUNT(*) FILTER (WHERE ct = 'negative_result') AS negative,
@@ -1770,6 +1776,118 @@ def fetch_negative_result_rate(con):
     }
 
 
+def fetch_positive_result_rate(con):
+    """v0.3.2: companion to fetch_negative_result_rate. Tracks share of
+    conclusions tagged claim_type IN ('mechanistic', 'predictive') —
+    proxy for analytical depth. Mirrors the negative bundle shape so
+    the render code is symmetric.
+
+    Same effective_completion_date semantics so April work surfaces.
+    """
+    POSITIVE_TYPES = ("mechanistic", "predictive")
+    by_month = []
+    for month, positive, total in con.execute(f"""
+        WITH dated AS (
+          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
+                 json_extract_string(em.extra_json, '$.claim_type') AS ct
+          FROM entity_mentions em
+          JOIN projects p USING(project_id)
+          WHERE em.entity_kind = 'conclusion'
+            AND p.effective_completion_date IS NOT NULL
+        )
+        SELECT month,
+               COUNT(*) FILTER (WHERE ct IN {POSITIVE_TYPES}) AS positive,
+               COUNT(*) AS total
+        FROM dated GROUP BY month ORDER BY month
+    """).fetchall():
+        rate = (positive / total) if total > 0 else 0.0
+        by_month.append({"month": month, "positive": positive, "total": total,
+                         "rate": round(rate, 4)})
+
+    by_project = []
+    for pid, pos, total in con.execute(f"""
+        SELECT project_id,
+               COUNT(*) FILTER (WHERE json_extract_string(extra_json, '$.claim_type') IN {POSITIVE_TYPES}) AS pos,
+               COUNT(*) AS total
+        FROM entity_mentions
+        WHERE entity_kind = 'conclusion'
+        GROUP BY project_id
+        HAVING COUNT(*) > 0
+        ORDER BY pos DESC, total DESC
+    """).fetchall():
+        rate = (pos / total) if total > 0 else 0.0
+        by_project.append({"project_id": pid, "positive": pos, "total": total,
+                           "rate": round(rate, 4)})
+
+    samples: dict = {}
+    for pid, text, sec, quote, ct in con.execute(f"""
+        SELECT project_id, surface_form, source_section, source_quote,
+               json_extract_string(extra_json, '$.claim_type') AS ct
+        FROM entity_mentions
+        WHERE entity_kind = 'conclusion'
+          AND json_extract_string(extra_json, '$.claim_type') IN {POSITIVE_TYPES}
+        ORDER BY project_id
+    """).fetchall():
+        lst = samples.setdefault(pid, [])
+        if len(lst) < 10:
+            lst.append({
+                "text": (text or "")[:300],
+                "source_section": sec or "",
+                "source_quote": (quote or "")[:400],
+                "claim_type": ct or "",
+            })
+
+    return {
+        "by_month": by_month,
+        "by_project": by_project,
+        "samples": samples,
+    }
+
+
+def fetch_whats_stuck(con, days_threshold: int = 30):
+    """v0.3.2: projects whose latest revision is more than N days ago.
+    Surfaces stalled work — projects with revision history but no recent
+    activity. Returns a list of {project_id, last_revision_date,
+    days_since, authors[]} sorted by days_since DESC."""
+    rows = con.execute(f"""
+        WITH last_rev AS (
+          SELECT project_id, MAX(version_date) AS last_date
+          FROM project_revisions
+          GROUP BY project_id
+        )
+        SELECT lr.project_id, lr.last_date,
+               CAST(date_diff('day', lr.last_date, CURRENT_DATE) AS INTEGER) AS days_since
+        FROM last_rev lr
+        WHERE CAST(date_diff('day', lr.last_date, CURRENT_DATE) AS INTEGER) >= {days_threshold}
+        ORDER BY days_since DESC
+    """).fetchall()
+    if not rows:
+        return []
+
+    # Map authors per project for the rows we found.
+    pid_set = {r[0] for r in rows}
+    placeholders = ",".join(["?"] * len(pid_set))
+    author_map: dict = {p: [] for p in pid_set}
+    for pid, name, orcid in con.execute(f"""
+        SELECT DISTINCT pa.project_id, a.canonical_name, a.orcid_id
+        FROM project_authors pa
+        JOIN authors a USING(author_id)
+        WHERE pa.project_id IN ({placeholders})
+        ORDER BY pa.project_id, a.canonical_name
+    """, list(pid_set)).fetchall():
+        author_map[pid].append({"name": name, "orcid": orcid})
+
+    return [
+        {
+            "project_id": r[0],
+            "last_revision_date": str(r[1]),
+            "days_since": r[2],
+            "authors": author_map.get(r[0], []),
+        }
+        for r in rows
+    ]
+
+
 def fetch_transitive_reach(con):
     """Per-project in_degree, two_hop_in_degree, cross_author_downstream for
     Act-4 propagation scatter. Only cross-author edges per risk D4b.
@@ -1798,15 +1916,18 @@ def fetch_transitive_reach(con):
 
 def fetch_weekly_activity_pulse(con):
     """Per-ISO-week counts of: projects started, revisions made, conclusions
-    recorded (by project completion_date). Returns (week_start_iso, starts,
-    revisions, conclusions)."""
+    recorded.
+
+    v0.3.2: 'conclusions' now bucketed by effective_completion_date (any
+    revision activity) instead of completion_date (RESEARCH_PLAN only).
+    In-flight projects with REPORT activity in the current week appear."""
     rows = con.execute("""
         WITH weeks AS (
           SELECT DISTINCT date_trunc('week', version_date) AS wk
           FROM project_revisions WHERE version_date IS NOT NULL
           UNION
-          SELECT DISTINCT date_trunc('week', completion_date)
-          FROM projects WHERE completion_date IS NOT NULL
+          SELECT DISTINCT date_trunc('week', effective_completion_date)
+          FROM projects WHERE effective_completion_date IS NOT NULL
         ),
         starts AS (
           SELECT date_trunc('week', start_date) AS wk, COUNT(*) AS n
@@ -1817,11 +1938,11 @@ def fetch_weekly_activity_pulse(con):
           FROM project_revisions WHERE version_date IS NOT NULL GROUP BY 1
         ),
         concls AS (
-          SELECT date_trunc('week', p.completion_date) AS wk, COUNT(*) AS n
+          SELECT date_trunc('week', p.effective_completion_date) AS wk, COUNT(*) AS n
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.completion_date IS NOT NULL
+            AND p.effective_completion_date IS NOT NULL
           GROUP BY 1
         )
         SELECT w.wk, COALESCE(s.n,0), COALESCE(r.n,0), COALESCE(c.n,0)
@@ -4167,6 +4288,131 @@ def render_negative_result_rate_panel(bundle):
     """
 
 
+def render_positive_result_rate_panel(bundle):
+    """v0.3.2: Act-5 panel symmetric to negative-result-rate. Tracks share
+    of conclusions tagged as `mechanistic` or `predictive` — proxy for
+    analytical depth. Single monthly trend (no per-project toggle; the
+    discoveries-timeline panel already drills there).
+
+    Together with the negative-result panel: rising negative share =
+    research hygiene. Rising positive share = analytical depth growing.
+    Both flat = neither hygiene nor depth advancing."""
+    by_month = bundle.get("by_month", []) if isinstance(bundle, dict) else []
+    if not by_month:
+        return """<div id="panel-positive-result-rate" class="panel">
+          <div class="panel-header"><h3>Positive-result reporting (mechanistic + predictive)</h3></div>
+          <p style="color:#666;">Awaiting Phase 2b extraction — no conclusion data yet.</p></div>"""
+    data_js = json.dumps(by_month)
+    return f"""
+    <div id="panel-positive-result-rate" class="panel">
+      <div class="panel-header">
+        <h3>Positive-result reporting — analytical-depth signal {_csv_link('conclusions_per_project')}</h3>
+        <span class="tag tag-real">real</span>
+      </div>
+      <div class="panel-claim">
+        Share of conclusions tagged <code>claim_type=mechanistic</code> or
+        <code>claim_type=predictive</code> by the L2 extractor. Companion to
+        the negative-result-rate panel above. Mechanistic claims explain
+        <em>why</em> something happens; predictive claims forecast what
+        future data should show. Together they're the depth half of the
+        analytical-output mix. Rising share suggests the corpus is doing
+        more deep analysis. Time axis is project completion (or latest
+        revision for in-flight projects).
+      </div>
+      <div id="chart-positive-result-rate" class="chart"></div>
+    </div>
+    <script>
+      (function() {{
+        const d = {data_js};
+        Plotly.newPlot('chart-positive-result-rate', [
+          {{
+            x: d.map(r => r.month), y: d.map(r => r.total),
+            type: 'bar', name: 'Total conclusions',
+            marker: {{color: 'rgba(100,100,100,0.18)'}},
+            yaxis: 'y2',
+            hovertemplate: '%{{x}}: %{{y}} total conclusions<extra></extra>',
+          }},
+          {{
+            x: d.map(r => r.month), y: d.map(r => r.rate),
+            type: 'scatter', mode: 'lines+markers',
+            name: 'Mechanistic + predictive share',
+            line: {{color: '#047857', width: 3}},
+            marker: {{size: 11}},
+            hovertemplate: '%{{x}}: %{{y:.1%}} (%{{customdata[0]}}/%{{customdata[1]}})<extra></extra>',
+            customdata: d.map(r => [r.positive, r.total]),
+          }},
+        ], {{
+          margin:{{l:50,r:50,t:30,b:40}},
+          xaxis:{{title:'Project completion month'}},
+          yaxis:{{title:'Positive-result share', tickformat:'.0%', range:[0, 0.6]}},
+          yaxis2:{{title:'Total conclusions', overlaying:'y', side:'right',
+                   showgrid:false, rangemode:'tozero'}},
+          legend:{{orientation:'h', y:-0.2}},
+          height: 320,
+        }}, {{responsive:true, displayModeBar:false}});
+      }})();
+    </script>
+    """
+
+
+def render_whats_stuck_panel(rows):
+    """v0.3.2: Act-3 panel listing projects whose latest revision is more
+    than N days old. Sortable + filterable table: project_id, last
+    revision date, days since, authors. Each project_id is clickable to
+    open the project drawer; each author opens the author drawer."""
+    if not rows:
+        return """<div id="panel-whats-stuck" class="panel">
+          <div class="panel-header"><h3>What's stuck</h3></div>
+          <p style="color:#666;">No projects with revision history older than the threshold (default 30 days). Either everyone is active, or the corpus is too young for stalls to surface.</p></div>"""
+    body_rows = []
+    for r in rows:
+        pid = html.escape(r["project_id"])
+        last = html.escape(r["last_revision_date"])
+        days = r["days_since"]
+        authors_html = ", ".join(
+            f'<span data-author-id="{html.escape(a.get("name") or "")}" '
+            f'style="cursor:pointer; color:#047857; text-decoration:underline;">'
+            f'{html.escape(a.get("name") or "?")}</span>'
+            for a in (r.get("authors") or [])
+        ) or '<em style="color:#999;">none recorded</em>'
+        body_rows.append(
+            f'<tr>'
+            f'<td><code data-project-id="{pid}" '
+            f'style="cursor:pointer; color:#1e40af; text-decoration:underline;" '
+            f'onclick="window.showProjectDetail(\'{pid}\', null)">{pid}</code></td>'
+            f'<td>{last}</td>'
+            f'<td style="text-align:right;">{days}</td>'
+            f'<td>{authors_html}</td>'
+            f'</tr>'
+        )
+    return f"""
+    <div id="panel-whats-stuck" class="panel">
+      <div class="panel-header">
+        <h3>What's stuck — projects without recent revisions {_csv_link('projects')}</h3>
+        <span class="tag tag-real">real</span>
+      </div>
+      <div class="panel-claim">
+        Projects whose <strong>latest revision is more than 30 days old</strong>
+        — work that's been parked, blocked, or completed-and-archived. Use
+        this list to triage: which stale projects need a follow-up nudge,
+        which are legitimately done, which are waiting on someone else.
+        Sort by <em>days since</em> for the longest-stalled at the top;
+        filter to find a specific author's work. Click a project_id for
+        full detail.
+      </div>
+      <table class="sortable filterable">
+        <thead><tr>
+          <th>Project</th>
+          <th>Last revision</th>
+          <th style="text-align:right;">Days since</th>
+          <th>Authors</th>
+        </tr></thead>
+        <tbody>{''.join(body_rows)}</tbody>
+      </table>
+    </div>
+    """
+
+
 def render_transitive_reach_panel(reach):
     """Act-4 scatter: in_degree × 2-hop_in_degree, color by cross-author
     downstream authors. Shows 'how far do ideas propagate'."""
@@ -5130,6 +5376,11 @@ def main(argv=None):
     transitive_reach = fetch_transitive_reach(con)
     negative_result_rate = (fetch_negative_result_rate(con)
                              if not partial_phase_2b else [])
+    # v0.3.2: positive-result rate (companion to negative) and what's-stuck
+    # (project velocity at-risk view).
+    positive_result_rate = (fetch_positive_result_rate(con)
+                             if not partial_phase_2b else [])
+    whats_stuck = fetch_whats_stuck(con)
     metrics_to_watch = fetch_metrics_to_watch(con)
     edge_type_bundle = fetch_edge_type_summary(con)
     revision_kind_bundle = fetch_revision_kind_summary(con)
@@ -5678,6 +5929,7 @@ window.showProjectDetail = function(pid, targetId) {{
   </div>
   {render_author_gantt_panel(gantt_data)}
   {render_author_interaction_panel(author_interaction)}
+  {render_whats_stuck_panel(whats_stuck)}
   {render_research_lines_panel(research_lines, line_handoffs, line_subclusters)}
   {render_subcluster_meta_graph_panel(subcluster_meta)}
 </div>
@@ -5704,6 +5956,7 @@ window.showProjectDetail = function(pid, targetId) {{
   {render_sophistication_panel(soph, partial_phase_2b)}
   {render_self_follow_on_panel(soph)}
   {render_negative_result_rate_panel(negative_result_rate)}
+  {render_positive_result_rate_panel(positive_result_rate)}
   {render_revision_kinds_panel(revision_kind_bundle)}
 </div>
 </section>
