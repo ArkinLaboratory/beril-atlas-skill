@@ -27,6 +27,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
+import dataclasses
+
+from .. import chunking as ck
 from .. import extraction_cache as ec
 from .. import llm_client as lc
 from .. import sections as s
@@ -195,8 +198,19 @@ class Extractor(ABC):
 
     def extract(self, section: s.Section,
                 section_id: str,
-                skip_llm: bool = False) -> ExtractionResult:
-        """Run the extractor over one section. Top-level entry point."""
+                skip_llm: bool = False,
+                chunk_threshold_chars: int = ck.DEFAULT_CHUNK_THRESHOLD_CHARS,
+                ) -> ExtractionResult:
+        """Run the extractor over one section. Top-level entry point.
+
+        v0.3.9: large sections are split via chunking.chunk_section()
+        before LLM extraction. Each chunk gets its own cache row keyed by
+        chunk_id; mentions and drift candidates from each chunk are merged
+        and deduped by (entity_kind, canonical_id, surface_form). Sections
+        under chunk_threshold_chars take the unchunked path with
+        chunk_id=None on the cache, preserving every cache row from
+        v0.1.x – v0.3.7.
+        """
         result = ExtractionResult(extractor_name=self.name, section_id=section_id)
 
         if not self.should_extract_from(section):
@@ -213,47 +227,119 @@ class Extractor(ABC):
             f"{k}={v.version}" for k, v in sorted(self.vocabularies.items())
         )
 
+        chunks = ck.chunk_section(section.content, threshold_chars=chunk_threshold_chars)
+
+        all_mentions: list[Mention] = []
+        all_drifts: list[DriftCandidate] = []
+        all_hits = 0
+        for chunk in chunks:
+            sub_section = section if chunk.total_chunks == 1 else dataclasses.replace(
+                section, content=chunk.content)
+            chunk_mentions, chunk_drifts, chunk_calls, chunk_tokens, chunk_hit = (
+                self._extract_chunk(
+                    section=sub_section,
+                    full_section=section,
+                    section_id=section_id,
+                    chunk_id=chunk.chunk_id,
+                    vocab_version_str=vocab_version_str,
+                )
+            )
+            all_mentions.extend(chunk_mentions)
+            all_drifts.extend(chunk_drifts)
+            result.llm_call_count += chunk_calls
+            result.llm_total_tokens += chunk_tokens
+            if chunk_hit:
+                all_hits += 1
+
+        # Cache hit at the section level only if every chunk was a hit.
+        result.cache_hit = (all_hits == len(chunks))
+
+        if len(chunks) > 1:
+            # Dedup across chunks. Same (kind, canonical_id, surface_form)
+            # appearing in multiple chunks is the boundary-overlap signal —
+            # keep first, drop rest. drift_candidates use a similar key.
+            mention_seen: set = set()
+            deduped_mentions: list[Mention] = []
+            for m in all_mentions:
+                key = (m.entity_kind, m.canonical_id, m.surface_form)
+                if key in mention_seen:
+                    continue
+                mention_seen.add(key)
+                deduped_mentions.append(m)
+            drift_seen: set = set()
+            deduped_drifts: list[DriftCandidate] = []
+            for d in all_drifts:
+                key = (d.entity_kind, d.surface_form)
+                if key in drift_seen:
+                    continue
+                drift_seen.add(key)
+                deduped_drifts.append(d)
+            all_mentions = deduped_mentions
+            all_drifts = deduped_drifts
+
+        result.mentions.extend(all_mentions)
+        result.drift_candidates.extend(all_drifts)
+        return result
+
+    def _extract_chunk(self, *,
+                        section: s.Section,
+                        full_section: s.Section,
+                        section_id: str,
+                        chunk_id: Optional[str],
+                        vocab_version_str: str
+                        ) -> tuple[list[Mention], list[DriftCandidate],
+                                    int, int, bool]:
+        """Run cache→LLM→parse for ONE chunk (or the whole section when
+        chunk_id is None). Returns (mentions, drifts, llm_calls,
+        total_tokens, cache_hit).
+
+        Factored out of extract() in v0.3.9 so chunked sections share the
+        cache+LLM+retry+parse logic with unchunked sections — only the
+        chunk_id parameter differs.
+        """
         cached = self.cache.get(
             content=section.content,
             prompt_version=self.prompt_version,
             vocab_version=vocab_version_str,
             model_id=self.model_id or "unknown",
+            chunk_id=chunk_id,
         )
+        chat_resp = None
+        llm_calls = 0
+        total_tokens = 0
+        cache_hit = False
+
         if cached is not None:
-            result.cache_hit = True
+            cache_hit = True
             response_content = cached.response_content
         else:
             messages = self.build_prompt_messages(section)
             try:
                 chat_resp = self.llm.chat(messages, response_format="json")
             except lc.LLMClientError as e:
-                # Surface as a single drift candidate noting the failure
-                result.drift_candidates.append(DriftCandidate(
-                    project_id=section.project_id,
+                drift = DriftCandidate(
+                    project_id=full_section.project_id,
                     section_id=section_id,
-                    source_doc=section.source_doc,
-                    source_section=section.h2_text,
+                    source_doc=full_section.source_doc,
+                    source_section=full_section.h2_text,
                     entity_kind="extraction_error",
-                    surface_form=f"<extraction failed for section>",
+                    surface_form="<extraction failed for section>",
                     source_quote=section.content[:200],
-                    llm_notes=f"LLM call failed: {e}",
+                    llm_notes=(
+                        f"LLM call failed: {e}"
+                        + (f" (chunk {chunk_id})" if chunk_id else "")
+                    ),
                     vocab_version=vocab_version_str,
                     prompt_version=self.prompt_version,
                     model_id=self.model_id,
-                ))
-                return result
+                )
+                return [], [drift], 0, 0, False
 
-            # v0.1.10: length-aware retry. If the first call hit
-            # finish_reason='length', the response is truncated and re-parsing
-            # is guaranteed to fail. Retry once with double max_tokens before
-            # caching, so the cache row reflects the best result we can get.
-            # v0.1.11: retry caps at 64K (Anthropic claude-sonnet's hard
-            # ceiling). Sections that still truncate at 64K need section
-            # chunking (Task #34, v0.2).
+            # v0.1.10 length-aware retry. v0.3.9 still applies per chunk,
+            # but the chunking should reduce the need for retry since each
+            # chunk has fewer claims to enumerate.
             if chat_resp.finish_reason == "length":
                 first_max = (chat_resp.completion_tokens or 0) + 2000
-                # Push to model's hard ceiling (64K for Anthropic claude-sonnet).
-                # If first call already used 32K, double would be 64K — same.
                 bumped = min(max(first_max * 2, 64000), 64000)
                 try:
                     chat_resp = self.llm.chat(
@@ -261,19 +347,10 @@ class Extractor(ABC):
                         response_format="json",
                         max_tokens=bumped,
                     )
-                    result.llm_call_count = 2  # paid for the retry
-                    result.llm_total_tokens = chat_resp.total_tokens
+                    llm_calls = 2
+                    total_tokens = chat_resp.total_tokens
                 except lc.LLMClientError:
-                    # Stick with the truncated first response if retry fails;
-                    # cache it so the parse_error notes capture finish_reason='length'.
                     pass
-                else:
-                    if chat_resp.finish_reason == "length":
-                        # Even the doubled budget wasn't enough — give up on this section.
-                        # The cache write below will record finish_reason='length' so the
-                        # parse_error notes flag it, and v0.1.8's cache.get() will bypass
-                        # this row on next scan (treats length as cache miss).
-                        pass
 
             response_content = chat_resp.content
             self.cache.put(
@@ -287,33 +364,36 @@ class Extractor(ABC):
                     "completion_tokens": chat_resp.completion_tokens,
                     "total_tokens": chat_resp.total_tokens,
                     "finish_reason": chat_resp.finish_reason,
+                    "chunk_id": chunk_id,
                 },
+                chunk_id=chunk_id,
             )
-            # llm_call_count was set above on retry; default to 1 if no retry.
-            if result.llm_call_count == 0:
-                result.llm_call_count = 1
-                result.llm_total_tokens = chat_resp.total_tokens
+            if llm_calls == 0:
+                llm_calls = 1
+                total_tokens = chat_resp.total_tokens
 
         try:
-            mentions, drifts = self.parse_llm_response(response_content, section)
-            result.mentions.extend(mentions)
-            result.drift_candidates.extend(drifts)
+            # IMPORTANT: parse with the FULL section so mention attribution
+            # uses the section's canonical section_id; the chunk content is
+            # only used for the LLM call itself.
+            mentions, drifts = self.parse_llm_response(response_content, full_section)
+            return mentions, drifts, llm_calls, total_tokens, cache_hit
         except lc.LLMValidationError as e:
-            # Pull finish_reason from the cached metadata if available; helps
-            # distinguish truncation ('length') from genuine malformed JSON.
             finish_reason: Optional[str] = None
             if cached is not None:
                 finish_reason = cached.response_metadata.get("finish_reason")
-            elif "chat_resp" in locals():  # fresh LLM call path
+            elif chat_resp is not None:
                 finish_reason = chat_resp.finish_reason
             notes = f"Response parse failed: {e}"
             if finish_reason:
                 notes = f"[finish_reason={finish_reason}] {notes}"
-            result.drift_candidates.append(DriftCandidate(
-                project_id=section.project_id,
+            if chunk_id:
+                notes = f"[chunk={chunk_id}] {notes}"
+            drift = DriftCandidate(
+                project_id=full_section.project_id,
                 section_id=section_id,
-                source_doc=section.source_doc,
-                source_section=section.h2_text,
+                source_doc=full_section.source_doc,
+                source_section=full_section.h2_text,
                 entity_kind="parse_error",
                 surface_form="<response parse failed>",
                 source_quote=response_content[:200],
@@ -321,9 +401,8 @@ class Extractor(ABC):
                 vocab_version=vocab_version_str,
                 prompt_version=self.prompt_version,
                 model_id=self.model_id,
-            ))
-
-        return result
+            )
+            return [], [drift], llm_calls, total_tokens, cache_hit
 
     # ---- Helper used by subclasses ----
 

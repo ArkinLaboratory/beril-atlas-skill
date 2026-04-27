@@ -35,9 +35,20 @@ class CachedExtraction:
     cached_at: dt.datetime
 
 
-def _hash_content(content: str) -> str:
-    """SHA256 of the content being extracted from."""
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+def _hash_content(content: str, chunk_id: Optional[str] = None) -> str:
+    """SHA256 of the content being extracted from.
+
+    v0.3.9: when chunk_id is set (e.g., '1/3' for chunk 1 of 3), it's
+    appended to the content before hashing. This gives chunked sections
+    distinct cache keys per chunk while leaving unchunked sections
+    (chunk_id=None) with their pre-v0.3.9 content_hash — preserving every
+    cache row from v0.1.x – v0.3.7.
+    """
+    if chunk_id is None:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        (content + f"|chunk={chunk_id}").encode("utf-8")
+    ).hexdigest()
 
 
 def _cache_key(content_hash: str, prompt_version: str,
@@ -97,7 +108,8 @@ class ExtractionCache:
     # ------ API ------
 
     def get(self, content: str, prompt_version: str, vocab_version: str,
-            model_id: str) -> Optional[CachedExtraction]:
+            model_id: str,
+            chunk_id: Optional[str] = None) -> Optional[CachedExtraction]:
         """Return the cached extraction for this key, or None on miss.
 
         Treats cached responses with finish_reason='length' as cache misses.
@@ -111,7 +123,7 @@ class ExtractionCache:
         from v0.1.7 kept returning as "cache hits" but failed re-parse on
         every scan, persisting as parse_error drift candidates.
         """
-        h = _hash_content(content)
+        h = _hash_content(content, chunk_id=chunk_id)
         key = _cache_key(h, prompt_version, vocab_version, model_id)
         row = self.con.execute("""
             SELECT cache_key, content_hash, prompt_version, vocab_version,
@@ -142,9 +154,16 @@ class ExtractionCache:
 
     def put(self, content: str, prompt_version: str, vocab_version: str,
             model_id: str, response_content: str,
-            response_metadata: Optional[dict] = None) -> CachedExtraction:
-        """Insert (or replace) a cache entry. Returns the stored record."""
-        h = _hash_content(content)
+            response_metadata: Optional[dict] = None,
+            chunk_id: Optional[str] = None) -> CachedExtraction:
+        """Insert (or replace) a cache entry. Returns the stored record.
+
+        v0.3.9: chunk_id is the optional 'i/N' identifier for a section
+        chunk; when set, it's mixed into the content_hash so each chunk
+        has its own cache row. Unchunked sections (chunk_id=None) retain
+        the pre-v0.3.9 cache key, preserving every prior cache entry.
+        """
+        h = _hash_content(content, chunk_id=chunk_id)
         key = _cache_key(h, prompt_version, vocab_version, model_id)
         now = dt.datetime.utcnow()
         meta_json = json.dumps(response_metadata or {})
