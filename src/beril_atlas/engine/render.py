@@ -1957,6 +1957,187 @@ def fetch_project_details(con):
     return details
 
 
+def fetch_entity_details(con):
+    """Per-canonical-id detail bundle for click-to-detail entity drawers.
+
+    v0.2: companion to fetch_project_details, supporting Task #33's
+    pervasive entity navigation primitives. Returns a dict keyed by
+    canonical_id with everything needed to drill from any entity-name
+    span in any panel into "show me every project that mentions this,
+    every section it appears in, and every author whose work is
+    represented."
+
+    Skips canonical_ids starting with 'proposed:' — those are unresolved
+    drift candidates and have a separate review pipeline. Vocab-matched
+    canonicals only.
+
+    Returns: dict[canonical_id] = {
+        canonical_id, entity_kind, mention_count, project_count,
+        author_count, projects (list of {project_id, mention_count}),
+        sections (up to 20 representative {project_id, source_doc,
+        source_section, source_quote, confidence}),
+        authors (list of distinct {author_id, name, orcid}),
+    }
+    """
+    rows = con.execute("""
+        SELECT em.canonical_id, em.entity_kind,
+               em.project_id, em.source_doc, em.source_section,
+               em.source_quote, em.confidence
+        FROM entity_mentions em
+        WHERE em.canonical_id NOT LIKE 'proposed:%'
+        ORDER BY em.canonical_id, em.project_id
+    """).fetchall()
+
+    details: dict[str, dict] = {}
+    project_sets: dict[str, set] = {}  # canonical_id -> set of project_ids
+    for cid, kind, pid, sdoc, sect, quote, conf in rows:
+        if cid not in details:
+            details[cid] = {
+                "canonical_id": cid,
+                "entity_kind": kind,
+                "mention_count": 0,
+                "projects": [],         # list of {project_id, mention_count}
+                "sections": [],         # up to 20 representative samples
+                "authors": [],          # populated below
+            }
+            project_sets[cid] = set()
+        details[cid]["mention_count"] += 1
+        project_sets[cid].add(pid)
+        # Cap sample sections per entity to avoid runaway HTML.
+        if len(details[cid]["sections"]) < 20:
+            details[cid]["sections"].append({
+                "project_id": pid,
+                "source_doc": sdoc,
+                "source_section": sect,
+                "source_quote": (quote or "")[:300],
+                "confidence": float(conf) if conf is not None else 0.0,
+            })
+
+    # Per-project mention counts per canonical (for the projects[] list).
+    proj_count_rows = con.execute("""
+        SELECT canonical_id, project_id, COUNT(*) AS n
+        FROM entity_mentions
+        WHERE canonical_id NOT LIKE 'proposed:%'
+        GROUP BY canonical_id, project_id
+        ORDER BY canonical_id, n DESC
+    """).fetchall()
+    for cid, pid, n in proj_count_rows:
+        if cid in details:
+            details[cid]["projects"].append(
+                {"project_id": pid, "mention_count": n})
+
+    # Distinct authors per canonical, joined through projects.
+    author_rows = con.execute("""
+        SELECT DISTINCT em.canonical_id, a.author_id, a.canonical_name, a.orcid_id
+        FROM entity_mentions em
+        JOIN project_authors pa USING(project_id)
+        JOIN authors a USING(author_id)
+        WHERE em.canonical_id NOT LIKE 'proposed:%'
+    """).fetchall()
+    for cid, aid, aname, aorcid in author_rows:
+        if cid in details:
+            details[cid]["authors"].append(
+                {"author_id": aid, "name": aname, "orcid": aorcid})
+
+    # Finalize counts that depend on the aggregated data.
+    for cid, d in details.items():
+        d["project_count"] = len(project_sets[cid])
+        d["author_count"] = len(d["authors"])
+
+    return details
+
+
+def fetch_author_details(con):
+    """Per-author-id detail bundle for click-to-detail author drawers.
+
+    v0.2: extends the existing per-author drawer in the leaderboard panel
+    with a body-level shared drawer accessible from any panel that
+    surfaces an author name (Gantt y-axis, project-detail authors list,
+    entity-detail authors list).
+
+    Returns: dict[author_id] = {
+        author_id, name, orcid, affiliation,
+        project_count,
+        projects (list of {project_id, role, source_doc}),
+        research_lines (list of {line_id, line_name, role}),
+        entity_kinds (dict of kind -> mention_count from this author's projects),
+    }
+    """
+    rows = con.execute("""
+        SELECT a.author_id, a.canonical_name, a.orcid_id, a.affiliation
+        FROM authors a
+    """).fetchall()
+    details: dict[str, dict] = {}
+    for aid, name, orcid, aff in rows:
+        details[aid] = {
+            "author_id": aid,
+            "name": name,
+            "orcid": orcid,
+            "affiliation": aff,
+            "projects": [],
+            "research_lines": [],
+            "entity_kinds": {},
+            "project_count": 0,
+        }
+
+    # Projects per author (DISTINCT to dedupe README + RESEARCH_PLAN + REPORT
+    # rows for the same project).
+    pa_rows = con.execute("""
+        SELECT DISTINCT pa.author_id, pa.project_id, pa.role,
+               STRING_AGG(DISTINCT pa.source_doc, ', ') AS docs
+        FROM project_authors pa
+        GROUP BY pa.author_id, pa.project_id, pa.role
+        ORDER BY pa.author_id, pa.project_id
+    """).fetchall()
+    for aid, pid, role, docs in pa_rows:
+        if aid in details:
+            details[aid]["projects"].append({
+                "project_id": pid,
+                "role": role,
+                "source_doc": docs,
+            })
+
+    # Per-author entity-kind mention counts (across all projects they're on).
+    em_rows = con.execute("""
+        SELECT pa.author_id, em.entity_kind, COUNT(*) AS n
+        FROM entity_mentions em
+        JOIN project_authors pa USING(project_id)
+        WHERE em.canonical_id NOT LIKE 'proposed:%'
+        GROUP BY pa.author_id, em.entity_kind
+    """).fetchall()
+    for aid, kind, n in em_rows:
+        if aid in details:
+            details[aid]["entity_kinds"][kind] = n
+
+    # Research-line membership: a line "contains" an author if any project
+    # in the line lists them. Soft-fail on schema (table may not exist on
+    # warehouses without --extract).
+    try:
+        rl_rows = con.execute("""
+            SELECT DISTINCT pa.author_id, rl.line_id, rl.line_name
+            FROM research_lines rl
+            JOIN reuse_edges re
+              ON re.src_project_id = rl.line_id OR re.dst_project_id = rl.line_id
+            JOIN project_authors pa
+              ON pa.project_id = re.src_project_id OR pa.project_id = re.dst_project_id
+        """).fetchall()
+        for aid, lid, lname in rl_rows:
+            if aid in details:
+                details[aid]["research_lines"].append({
+                    "line_id": lid, "line_name": lname,
+                })
+    except Exception:
+        # research_lines schema may not match across warehouses; the existing
+        # author leaderboard panel does this lookup with full context.
+        # Drawer still works without research_lines populated.
+        pass
+
+    for aid, d in details.items():
+        d["project_count"] = len(d["projects"])
+
+    return details
+
+
 def fetch_sophistication_vs_revisions(con):
     rows = con.execute("""
         SELECT p.project_id, p.revision_depth, sc.depth_score,
@@ -2135,10 +2316,14 @@ def render_authors_table(authors):
         name = html.escape(a["name"] or "")
         nproj = a["project_count"]
         nlines = len(a.get("research_lines", []))
+        # v0.2 Task #33: name span carries data-author-id so the delegated
+        # click handler also opens the global author drawer (in addition
+        # to the panel-local research-lines drawer triggered by the row click).
         return (
             f"<tr class='authors-row' data-aid='{aid}' style='cursor:pointer;' "
-            f"title='Click to see research lines'>"
-            f"<td>{name}</td>"
+            f"title='Click row for research-lines breakdown; click name for global drawer'>"
+            f"<td><span data-author-id='{aid}' "
+            f"style='color:#047857; text-decoration:underline; cursor:pointer;'>{name}</span></td>"
             f"<td>{orcid_cell}</td>"
             f"<td style='text-align:right;'>{nproj}</td>"
             f"<td style='text-align:right;'>{nlines}</td>"
@@ -4498,6 +4683,8 @@ def render_recommendations_panel(recs):
         ev_panel = ev.get("source_panel") or ""
         ev_html_parts = []
         if ev_entities:
+            # v0.2 Task #33: cited canonicals are now click-targets for
+            # the global entity drawer.
             ent_html = []
             for e in ev_entities[:12]:
                 if isinstance(e, dict):
@@ -4505,9 +4692,15 @@ def render_recommendations_panel(recs):
                     canon = html.escape(str(e.get("canonical") or ""))
                     ent_html.append(
                         f"<li><span style='color:#666; font-size:0.8em;'>{kind}</span> "
-                        f"<code>{canon}</code></li>")
+                        f"<code data-entity-id=\"{canon}\" "
+                        f"style=\"cursor:pointer; color:#7c3aed; text-decoration:underline;\">"
+                        f"{canon}</code></li>")
                 else:
-                    ent_html.append(f"<li><code>{html.escape(str(e))}</code></li>")
+                    safe = html.escape(str(e))
+                    ent_html.append(
+                        f"<li><code data-entity-id=\"{safe}\" "
+                        f"style=\"cursor:pointer; color:#7c3aed; text-decoration:underline;\">"
+                        f"{safe}</code></li>")
             ev_html_parts.append(
                 "<div><strong style='font-size:0.8em; color:#475569;'>"
                 f"Cited entities ({len(ev_entities)})</strong>"
@@ -4601,13 +4794,25 @@ def render_dark_matter_table(rows):
         return """<div id="panel-dark-matter" class="panel">
           <div class="panel-header"><h3>Dark-matter entities</h3></div>
           <p style="color:#666;">Awaiting Phase 2b extraction; or no single-mention canonicals.</p></div>"""
+    # v0.2 Task #33: canonical and project_id cells are now click-targets
+    # for the global drawer. data-entity-id / data-project-id attributes
+    # let the delegated click handler in the page footer dispatch.
     rows_html = []
     for r in rows:
+        cid = r['canonical_id']
+        pid = r['project_id']
         rows_html.append(
-            f"<tr><td><code>{html.escape(r['canonical_id'])}</code></td>"
+            f"<tr>"
+            f"<td><code data-entity-id=\"{html.escape(cid)}\" "
+            f"style=\"cursor:pointer; color:#7c3aed; text-decoration:underline;\">"
+            f"{html.escape(cid)}</code></td>"
             f"<td>{html.escape(r['entity_kind'])}</td>"
-            f"<td><code>{html.escape(r['project_id'])}</code></td>"
-            f"<td>{html.escape(r['source_doc'])} §{html.escape(r['source_section'])}</td></tr>"
+            f"<td><code data-project-id=\"{html.escape(pid)}\" "
+            f"style=\"cursor:pointer; color:#1e40af; text-decoration:underline;\" "
+            f"onclick=\"window.showProjectDetail('{html.escape(pid)}', null)\">"
+            f"{html.escape(pid)}</code></td>"
+            f"<td>{html.escape(r['source_doc'])} §{html.escape(r['source_section'])}</td>"
+            f"</tr>"
         )
     return f"""
     <div id="panel-dark-matter" class="panel">
@@ -4894,6 +5099,11 @@ def main(argv=None):
     weekly_pulse = fetch_weekly_activity_pulse(con)
 
     project_details = fetch_project_details(con)
+    # v0.2 Task #33: per-canonical-id and per-author-id detail bundles for
+    # the body-level entity / author drawers. Populated on partial_phase_2b
+    # too, but entity_details will be empty (no extracted mentions).
+    entity_details = fetch_entity_details(con) if not partial_phase_2b else {}
+    author_details = fetch_author_details(con)
     killer_rows = fetch_sophistication_vs_revisions(con)
     research_lines = fetch_research_lines(con)
     line_handoffs = fetch_research_line_handoffs(con)
@@ -4965,6 +5175,8 @@ def main(argv=None):
               + render_recommendations_panel(recommendations))
     )
     project_details_js = json.dumps(project_details)
+    entity_details_js = json.dumps(entity_details)
+    author_details_js = json.dumps(author_details)
 
     # Plotly source: CDN by default; vendored local file when --vendor-plotly
     # is set. Vendoring adds ~4.4 MB to deploy but eliminates external network
@@ -5089,10 +5301,39 @@ def main(argv=None):
   Full risk register: <a href="dashboard-caveats.md"><code>dashboard-caveats.md</code></a>.
 </div>
 
+<!-- v0.2 Task #33: body-level shared drawer for entity / author detail.
+     Floats fixed in the right gutter. Visibility toggled by JS when a
+     window.showEntityDetail / window.showAuthorDetail call lands. Has a
+     close button (×) and a back-stack so users can navigate
+     entity → project → author → entity without losing context. -->
+<div id="atlas-global-drawer" style="position:fixed; top:1rem; right:1rem;
+     width:min(420px, 90vw); max-height:calc(100vh - 2rem); overflow-y:auto;
+     background:#ffffff; border:1px solid #cbd5e1; border-radius:6px;
+     box-shadow:0 8px 24px rgba(0,0,0,0.12); padding:0; z-index:9999;
+     display:none; font-size:0.92em;">
+  <div id="atlas-global-drawer-header" style="display:flex;
+       justify-content:space-between; align-items:center;
+       padding:0.5rem 0.8rem; background:#f1f5f9; border-bottom:1px solid #cbd5e1;
+       border-radius:6px 6px 0 0;">
+    <div>
+      <button id="atlas-global-drawer-back" style="background:none; border:none;
+         cursor:pointer; font-size:1rem; color:#1e40af; margin-right:0.4rem;
+         display:none;" title="Back">&larr;</button>
+      <span id="atlas-global-drawer-title" style="font-weight:600;"></span>
+    </div>
+    <button id="atlas-global-drawer-close" style="background:none; border:none;
+       cursor:pointer; font-size:1.2rem; color:#64748b;" title="Close">&times;</button>
+  </div>
+  <div id="atlas-global-drawer-body" style="padding:0.8rem;"></div>
+</div>
+
 <script>
 // Shared project-detail module. Any panel with clickable project nodes calls
 // window.showProjectDetail(project_id, target_div_id).
 window.ATLAS_PROJECT_DETAILS = {project_details_js};
+// v0.2 Task #33: per-canonical-id and per-author-id detail bundles.
+window.ATLAS_ENTITY_DETAILS = {entity_details_js};
+window.ATLAS_AUTHOR_DETAILS = {author_details_js};
 // Render an author record as an <li> with ORCID link if present
 window._renderAuthorLi = function(a) {{
   if (!a) return '';
@@ -5104,8 +5345,24 @@ window._renderAuthorLi = function(a) {{
 
 window.showProjectDetail = function(pid, targetId) {{
   const p = window.ATLAS_PROJECT_DETAILS[pid];
-  const target = document.getElementById(targetId);
+  // v0.2 Task #33: when targetId is null/undefined, use the body-level
+  // global drawer (#atlas-global-drawer-body) instead of a panel-local
+  // detail div. Also pop the drawer into view + set its title.
+  let target;
+  let useGlobalDrawer = false;
+  if (targetId == null) {{
+    target = document.getElementById('atlas-global-drawer-body');
+    useGlobalDrawer = true;
+  }} else {{
+    target = document.getElementById(targetId);
+  }}
   if (!p || !target) return;
+  if (useGlobalDrawer) {{
+    const drawer = document.getElementById('atlas-global-drawer');
+    const drawerTitle = document.getElementById('atlas-global-drawer-title');
+    if (drawer) drawer.style.display = 'block';
+    if (drawerTitle) drawerTitle.textContent = pid;
+  }}
   const authors = (p.authors || []).map(window._renderAuthorLi).join('') ||
                   '<li><em>none</em></li>';
   // Cross-author projects (citing / cited)
@@ -5177,6 +5434,185 @@ window.showProjectDetail = function(pid, targetId) {{
     </p>
   `;
 }};
+
+// ===== v0.2 Task #33: entity / author global drawer =====
+//
+// Pattern: any clickable entity-name span in any panel calls
+//   window.showEntityDetail(canonical_id)
+// or
+//   window.showAuthorDetail(author_id)
+// to populate the body-level shared drawer (#atlas-global-drawer).
+//
+// The drawer maintains a back-stack so clicking through the chain
+// entity -> project -> author -> entity returns the user to the
+// previous view via the ← button.
+//
+// Accepts an optional second argument matching the existing
+// showProjectDetail(pid, targetId) signature so callers that have a
+// panel-local drawer in mind can still get one.
+
+(function() {{
+  const drawer = document.getElementById('atlas-global-drawer');
+  const drawerHeader = document.getElementById('atlas-global-drawer-header');
+  const drawerTitle = document.getElementById('atlas-global-drawer-title');
+  const drawerBody = document.getElementById('atlas-global-drawer-body');
+  const drawerClose = document.getElementById('atlas-global-drawer-close');
+  const drawerBack = document.getElementById('atlas-global-drawer-back');
+  if (!drawer) return;  // pre-2b dashboards may not include the drawer
+
+  const stack = [];  // back-stack of {kind, id, title, html}
+
+  function escapeHtml(s) {{
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }}
+
+  function projectChip(pid) {{
+    const safe = escapeHtml(pid);
+    return `<code style="cursor:pointer; color:#1e40af; text-decoration:underline;"
+       onclick="window.showProjectDetail('${{safe}}', null); return false;">${{safe}}</code>`;
+  }}
+  function entityChip(cid, label) {{
+    const safe = escapeHtml(cid);
+    const lbl = escapeHtml(label || cid);
+    return `<span style="cursor:pointer; color:#7c3aed; text-decoration:underline;"
+       onclick="window.showEntityDetail('${{safe}}'); return false;">${{lbl}}</span>`;
+  }}
+  function authorChip(aid, name) {{
+    const safe = escapeHtml(aid);
+    const lbl = escapeHtml(name || aid);
+    return `<span style="cursor:pointer; color:#047857; text-decoration:underline;"
+       onclick="window.showAuthorDetail('${{safe}}'); return false;">${{lbl}}</span>`;
+  }}
+  window._atlasProjectChip = projectChip;
+  window._atlasEntityChip = entityChip;
+  window._atlasAuthorChip = authorChip;
+
+  function show(kindLabel, title, html) {{
+    drawer.style.display = 'block';
+    drawerTitle.textContent = title;
+    drawerBody.innerHTML = html;
+    drawerBack.style.display = stack.length > 1 ? 'inline-block' : 'none';
+  }}
+
+  function pushAndShow(state) {{
+    stack.push(state);
+    show(state.kindLabel, state.title, state.html);
+  }}
+
+  drawerClose.addEventListener('click', () => {{
+    drawer.style.display = 'none';
+    stack.length = 0;
+  }});
+  drawerBack.addEventListener('click', () => {{
+    if (stack.length < 2) return;
+    stack.pop();  // current
+    const prev = stack[stack.length - 1];
+    show(prev.kindLabel, prev.title, prev.html);
+  }});
+
+  // ---- entity drawer ----------------------------------------------------
+  window.showEntityDetail = function(canonicalId) {{
+    const e = window.ATLAS_ENTITY_DETAILS && window.ATLAS_ENTITY_DETAILS[canonicalId];
+    if (!e) {{
+      pushAndShow({{
+        kindLabel: 'entity', title: canonicalId,
+        html: `<p style="color:#666;">No detail for <code>${{escapeHtml(canonicalId)}}</code> in this dashboard. Either an unmatched ('proposed:') drift candidate or pre-2b warehouse.</p>`,
+      }});
+      return;
+    }}
+    const projectsHtml = (e.projects || []).slice(0, 30).map(p =>
+      `<li>${{projectChip(p.project_id)}} <span style="color:#666; font-size:0.85em;">(${{p.mention_count}} mentions)</span></li>`
+    ).join('');
+    const authorsHtml = (e.authors || []).map(a =>
+      `<li>${{authorChip(a.author_id, a.name)}}${{a.orcid ? ` <span style='color:#666; font-size:0.8em;'>(${{escapeHtml(a.orcid)}})</span>` : ''}}</li>`
+    ).join('');
+    const sectionsHtml = (e.sections || []).slice(0, 12).map(s =>
+      `<li>${{projectChip(s.project_id)}} :: <code style="font-size:0.85em;">${{escapeHtml(s.source_doc)}}</code> :: <em>${{escapeHtml(s.source_section)}}</em>` +
+      (s.source_quote ? `<div style="color:#475569; font-size:0.85em; margin:0.2em 0 0.6em 0; border-left:2px solid #cbd5e1; padding-left:0.5em;">${{escapeHtml(s.source_quote)}}</div>` : '') +
+      `</li>`
+    ).join('');
+    const html = `
+      <div style="margin-bottom:0.6rem;">
+        <span style="font-size:0.8em; color:#666;">${{escapeHtml(e.entity_kind)}}</span>
+      </div>
+      <div style="margin-bottom:0.4rem;">
+        <strong>${{e.mention_count}}</strong> mentions ·
+        <strong>${{e.project_count}}</strong> projects ·
+        <strong>${{e.author_count}}</strong> authors
+      </div>
+      <details open style="margin-top:0.6rem;">
+        <summary style="cursor:pointer; font-weight:600;">Projects (${{(e.projects || []).length}})</summary>
+        <ul style="margin:0.3rem 0 0 1.2rem;">${{projectsHtml || '<li><em>none</em></li>'}}</ul>
+      </details>
+      <details style="margin-top:0.4rem;">
+        <summary style="cursor:pointer; font-weight:600;">Authors (${{(e.authors || []).length}})</summary>
+        <ul style="margin:0.3rem 0 0 1.2rem;">${{authorsHtml || '<li><em>none</em></li>'}}</ul>
+      </details>
+      <details style="margin-top:0.4rem;">
+        <summary style="cursor:pointer; font-weight:600;">Section samples (${{Math.min((e.sections || []).length, 12)}})</summary>
+        <ul style="margin:0.3rem 0 0 1.2rem;">${{sectionsHtml || '<li><em>none</em></li>'}}</ul>
+      </details>
+    `;
+    pushAndShow({{kindLabel: 'entity', title: canonicalId, html: html}});
+  }};
+
+  // ---- author drawer ----------------------------------------------------
+  window.showAuthorDetail = function(authorId) {{
+    const a = window.ATLAS_AUTHOR_DETAILS && window.ATLAS_AUTHOR_DETAILS[authorId];
+    if (!a) {{
+      pushAndShow({{
+        kindLabel: 'author', title: authorId,
+        html: `<p style="color:#666;">No detail for <code>${{escapeHtml(authorId)}}</code>.</p>`,
+      }});
+      return;
+    }}
+    const projectsHtml = (a.projects || []).map(p =>
+      `<li>${{projectChip(p.project_id)}} <span style="color:#666; font-size:0.85em;">(via ${{escapeHtml(p.source_doc || '')}})</span></li>`
+    ).join('');
+    const linesHtml = Array.from(new Map((a.research_lines || []).map(ln => [ln.line_id, ln])).values()).map(ln =>
+      `<li><code>${{escapeHtml(ln.line_id)}}</code></li>`
+    ).join('');
+    const ekRows = Object.entries(a.entity_kinds || {{}}).map(([k, n]) =>
+      `<li>${{escapeHtml(k)}}: ${{n}}</li>`
+    ).join('');
+    const html = `
+      <div style="margin-bottom:0.4rem;">
+        ${{a.orcid ? `<span style="color:#666; font-size:0.85em;">ORCID: ${{escapeHtml(a.orcid)}}</span><br>` : ''}}
+        ${{a.affiliation ? `<span style="color:#666; font-size:0.85em;">${{escapeHtml(a.affiliation)}}</span>` : ''}}
+      </div>
+      <div style="margin-bottom:0.4rem;">
+        <strong>${{a.project_count}}</strong> projects
+      </div>
+      <details open style="margin-top:0.6rem;">
+        <summary style="cursor:pointer; font-weight:600;">Projects (${{(a.projects || []).length}})</summary>
+        <ul style="margin:0.3rem 0 0 1.2rem;">${{projectsHtml || '<li><em>none</em></li>'}}</ul>
+      </details>
+      ${{ekRows ? `<details style="margin-top:0.4rem;">
+        <summary style="cursor:pointer; font-weight:600;">Entity-mention totals (across this author's projects)</summary>
+        <ul style="margin:0.3rem 0 0 1.2rem;">${{ekRows}}</ul>
+      </details>` : ''}}
+    `;
+    pushAndShow({{kindLabel: 'author', title: a.name || authorId, html: html}});
+  }};
+
+  // ---- delegated click handlers for data-entity-id / data-author-id ----
+  document.addEventListener('click', (e) => {{
+    const ent = e.target.closest('[data-entity-id]');
+    if (ent) {{
+      e.preventDefault();
+      window.showEntityDetail(ent.dataset.entityId);
+      return;
+    }}
+    const auth = e.target.closest('[data-author-id]');
+    if (auth) {{
+      e.preventDefault();
+      window.showAuthorDetail(auth.dataset.authorId);
+      return;
+    }}
+  }});
+}})();
 </script>
 
 <div class="narrative-arc">
