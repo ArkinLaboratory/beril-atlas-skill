@@ -2210,14 +2210,30 @@ h1 { color:var(--navy); font-size:2rem; margin:0; }
 h1 + .subtitle { color:var(--muted); font-weight:normal; margin:0.3rem 0 0; }
 h2 { color:var(--navy); font-size:1.5rem; margin-top:0; }
 h3 { color:var(--accent); margin-top:1.5rem; font-size:1.1rem; }
-details.act { margin-top:2rem; border:1px solid var(--border); border-radius:4px; scroll-margin-top:1rem; }
-details.act[open] { background:#fbfbfc; }
-details.act > summary { cursor:pointer; padding:1rem 1.25rem; background:#f3f4f6; border-radius:4px 4px 0 0; list-style:none; user-select:none; }
-details.act > summary::-webkit-details-marker { display:none; }
-details.act > summary:hover { background:#e5e7eb; }
-details.act > summary::before { content:'▶'; display:inline-block; margin-right:0.5rem; transition:transform 0.2s; font-size:0.7rem; color:var(--muted); }
-details.act[open] > summary::before { transform:rotate(90deg); }
+/* v0.3.0: tabbed dashboard. Each act is a tab body, hidden by default,
+   shown when its tab is active. Old details/summary markup retired. */
+section.act { margin-top:1rem; border:1px solid var(--border); border-radius:4px;
+              scroll-margin-top:1rem; background:#fbfbfc; display:none; }
+section.act.active { display:block; }
+section.act > h2 { margin:0; padding:1rem 1.25rem; background:#f3f4f6;
+                   border-radius:4px 4px 0 0; font-size:1.4rem; }
 .act-body { padding:1rem 1.25rem 1.5rem; }
+
+/* Tab nav: sticky at top of main content. */
+nav.tab-nav { display:flex; flex-wrap:wrap; gap:0.25rem; padding:0.5rem 1rem;
+              background:linear-gradient(90deg, #eff6ff 0%, #e0e7ff 50%, #ede9fe 100%);
+              border:1px solid #c7d2fe; border-radius:6px; margin:1rem 0;
+              position:sticky; top:0; z-index:50; }
+nav.tab-nav .tab-btn { background:white; border:1px solid #c7d2fe;
+                       color:var(--navy); padding:0.4rem 0.85rem;
+                       border-radius:999px; font-size:0.88rem; font-weight:500;
+                       cursor:pointer; white-space:nowrap; }
+nav.tab-nav .tab-btn:hover { background:#dbeafe; }
+nav.tab-nav .tab-btn.active { background:var(--navy); color:white;
+                              border-color:var(--navy); }
+nav.tab-nav .tab-btn .tab-num { color:var(--accent); font-weight:700;
+                                margin-right:0.3rem; }
+nav.tab-nav .tab-btn.active .tab-num { color:#fcd34d; }
 .kpi-row { display:grid; grid-template-columns:repeat(5, 1fr); gap:0.75rem; margin:1rem 0 2rem; }
 .kpi { background:#f9fafb; border:1px solid var(--border); padding:1rem; border-radius:4px; }
 .kpi-value { font-size:1.7rem; font-weight:700; color:var(--accent); line-height:1.1; }
@@ -5615,51 +5631,43 @@ window.showProjectDetail = function(pid, targetId) {{
 }})();
 </script>
 
-<div class="narrative-arc">
-  <span class="arc-label">The story:</span>
-  <a href="#act0" class="step"><span class="step-num">0.</span>Watch</a>
-  <span class="arrow">→</span>
-  <a href="#act1" class="step"><span class="step-num">1.</span>Alive?</a>
-  <span class="arrow">→</span>
-  <a href="#act2" class="step"><span class="step-num">2.</span>What?</a>
-  <span class="arrow">→</span>
-  <a href="#act3" class="step"><span class="step-num">3.</span>Who?</a>
-  <span class="arrow">→</span>
-  <a href="#act4" class="step"><span class="step-num">4.</span>How it compounds?</a>
-  <span class="arrow">→</span>
-  <a href="#act5" class="step"><span class="step-num">5.</span>Getting better?</a>
-  <span class="arrow">→</span>
-  <a href="#act6" class="step"><span class="step-num">6.</span>Where next?</a>
-  <span class="arrow">→</span>
-  <a href="#act7" class="step"><span class="step-num">7.</span>Caveats</a>
-</div>
+<nav class="tab-nav" aria-label="Dashboard tabs">
+  <button type="button" class="tab-btn" data-tab="act0"><span class="tab-num">0.</span>Watch</button>
+  <button type="button" class="tab-btn" data-tab="act1"><span class="tab-num">1.</span>Alive?</button>
+  <button type="button" class="tab-btn" data-tab="act2"><span class="tab-num">2.</span>What?</button>
+  <button type="button" class="tab-btn" data-tab="act3"><span class="tab-num">3.</span>Who?</button>
+  <button type="button" class="tab-btn" data-tab="act4"><span class="tab-num">4.</span>How it compounds?</button>
+  <button type="button" class="tab-btn" data-tab="act5"><span class="tab-num">5.</span>Getting better?</button>
+  <button type="button" class="tab-btn" data-tab="act6"><span class="tab-num">6.</span>Where next?</button>
+  <button type="button" class="tab-btn" data-tab="act7"><span class="tab-num">7.</span>Caveats</button>
+</nav>
 
-<details class="act" id="act0" open>
-<summary><h2>0 · Metrics to watch <span class="tag tag-real">forward-looking</span></h2></summary>
+<section class="act" id="act0">
+<h2>0 · Metrics to watch <span class="tag tag-real">forward-looking</span></h2>
 <div class="act-body">
   {render_metrics_to_watch_panel(metrics_to_watch)}
-</div>
-</details>
-
-<details class="act" id="act1" open>
-<summary><h2>1 · State of the system <span class="tag tag-real">real</span></h2></summary>
-<div class="act-body">
   {render_findings_panel(findings)}
+</div>
+</section>
+
+<section class="act" id="act1">
+<h2>1 · State of the system <span class="tag tag-real">real</span></h2>
+<div class="act-body">
   {render_kpi(summary)}
   {render_cumulative_growth(timeline)}
   {render_weekly_activity_pulse(weekly_pulse, phase_2b_ran=not partial_phase_2b)}
 </div>
-</details>
+</section>
 
-<details class="act" id="act2" open>
-<summary><h2>2 · Science portfolio <span class="tag {'tag-partial' if partial_phase_2b else 'tag-real'}">{'awaiting Phase 2b' if partial_phase_2b else 'real'}</span></h2></summary>
+<section class="act" id="act2">
+<h2>2 · Science portfolio <span class="tag {'tag-partial' if partial_phase_2b else 'tag-real'}">{'awaiting Phase 2b' if partial_phase_2b else 'real'}</span></h2>
 <div class="act-body">
   {science_content}
 </div>
-</details>
+</section>
 
-<details class="act" id="act3" open>
-<summary><h2>3 · Authors & research lines <span class="tag tag-real">real (citation-graph lines; topic-overlap deferred)</span></h2></summary>
+<section class="act" id="act3">
+<h2>3 · Authors & research lines <span class="tag tag-real">real (citation-graph lines; topic-overlap deferred)</span></h2>
 <div class="act-body">
   <div id="panel-authors" class="panel">
     <div class="panel-header">
@@ -5673,10 +5681,10 @@ window.showProjectDetail = function(pid, targetId) {{
   {render_research_lines_panel(research_lines, line_handoffs, line_subclusters)}
   {render_subcluster_meta_graph_panel(subcluster_meta)}
 </div>
-</details>
+</section>
 
-<details class="act" id="act4">
-<summary><h2>4 · Amplification <span class="tag tag-real">real</span></h2></summary>
+<section class="act" id="act4">
+<h2>4 · Amplification <span class="tag tag-real">real</span></h2>
 <div class="act-body">
   {render_reuse_network(graph)}
   <div id="panel-top-cited" class="panel">
@@ -5687,10 +5695,10 @@ window.showProjectDetail = function(pid, targetId) {{
   {render_edge_type_panel(edge_type_bundle)}
   {render_revision_distribution(rev_dist)}
 </div>
-</details>
+</section>
 
-<details class="act" id="act5" open>
-<summary><h2>5 · Self-improvement <span class="tag {'tag-partial' if partial_phase_2b else 'tag-real'}">{'breadth pending Phase 2b' if partial_phase_2b else 'real'}</span></h2></summary>
+<section class="act" id="act5">
+<h2>5 · Self-improvement <span class="tag {'tag-partial' if partial_phase_2b else 'tag-real'}">{'breadth pending Phase 2b' if partial_phase_2b else 'real'}</span></h2>
 <div class="act-body">
   {render_killer_chart(killer_rows)}
   {render_sophistication_panel(soph, partial_phase_2b)}
@@ -5698,17 +5706,17 @@ window.showProjectDetail = function(pid, targetId) {{
   {render_negative_result_rate_panel(negative_result_rate)}
   {render_revision_kinds_panel(revision_kind_bundle)}
 </div>
-</details>
+</section>
 
-<details class="act" id="act6" open>
-<summary><h2>6 · Frontiers <span class="tag {'tag-partial' if partial_phase_2b else 'tag-real'}">{'awaiting Phase 2b' if partial_phase_2b else 'dark-matter + under-explored real; L6 LLM-synthesis included'}</span></h2></summary>
+<section class="act" id="act6">
+<h2>6 · Frontiers <span class="tag {'tag-partial' if partial_phase_2b else 'tag-real'}">{'awaiting Phase 2b' if partial_phase_2b else 'dark-matter + under-explored real; L6 LLM-synthesis included'}</span></h2>
 <div class="act-body">
   {act6_content}
 </div>
-</details>
+</section>
 
-<details class="act" id="act7">
-<summary><h2>7 · What this dashboard does NOT tell you</h2></summary>
+<section class="act" id="act7">
+<h2>7 · What this dashboard does NOT tell you</h2>
 <div class="act-body">
   <h3 style="margin-top:0.5rem;">Critical framing — read these before anything else</h3>
   <ul>
@@ -5733,7 +5741,7 @@ window.showProjectDetail = function(pid, targetId) {{
     (32 entries across 8 categories; copied alongside this dashboard at render time).
   </p>
 </div>
-</details>
+</section>
 
 <footer>
   Generated by atlas_render.py — warehouse <code>{args.warehouse.name}</code>.
@@ -5887,9 +5895,10 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
   if (targets.length === 0) return;
   const sidebarSections = document.querySelectorAll('details.sidebar-section');
   function actForPanel(panel) {{
-    // Walk up to nearest details.act ancestor; fall back to panel.id if the
-    // panel itself is an act (Act 7 links directly to "act7").
-    const actEl = panel.closest('details.act');
+    // v0.3.0: walk up to nearest section.act ancestor (tabbed layout).
+    // Fall back to panel.id if the panel itself is an act (Act 7 links
+    // directly to "act7").
+    const actEl = panel.closest('section.act');
     return actEl ? actEl.id : (panel.id.startsWith('act') ? panel.id : null);
   }}
   let currentId = null;
@@ -5914,6 +5923,67 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
     }}
   }}, {{ rootMargin: '-80px 0px -60% 0px', threshold: 0 }});
   targets.forEach(t => io.observe(t));
+}})();
+
+// ===== v0.3.0: tabbed dashboard switcher =====
+//
+// One Act visible at a time. Tab nav at top of main content. URL hash
+// (#act3) controls the initial tab and supports deep-linking. Sidebar
+// `aside.sidebar a[href="#actN"]` clicks also activate the tab.
+
+(function() {{
+  const tabs = Array.from(document.querySelectorAll('section.act'));
+  const buttons = Array.from(document.querySelectorAll('nav.tab-nav .tab-btn'));
+  if (tabs.length === 0 || buttons.length === 0) return;
+
+  function activate(tabId) {{
+    if (!tabId || !document.getElementById(tabId)) tabId = 'act0';
+    tabs.forEach(t => t.classList.toggle('active', t.id === tabId));
+    buttons.forEach(b => b.classList.toggle('active',
+                                                b.dataset.tab === tabId));
+    // Re-fire resize so any Plotly charts that were display:none rerender.
+    window.dispatchEvent(new Event('resize'));
+  }}
+
+  function activateFromHash() {{
+    const h = (window.location.hash || '').replace(/^#/, '');
+    activate(h.startsWith('act') ? h : 'act0');
+  }}
+
+  // Initial state.
+  activateFromHash();
+
+  // Tab buttons -> hash change -> activate. (Use the hash so back/forward
+  // browser nav works as expected.)
+  buttons.forEach(b => {{
+    b.addEventListener('click', (e) => {{
+      e.preventDefault();
+      const tab = b.dataset.tab;
+      if (tab) {{
+        history.replaceState(null, '', '#' + tab);
+        activate(tab);
+        // Scroll to top of the activated tab so panels are visible.
+        const el = document.getElementById(tab);
+        if (el) el.scrollIntoView({{behavior: 'auto', block: 'start'}});
+      }}
+    }});
+  }});
+
+  // Sidebar links of the form #actN trigger the same tab switch.
+  document.querySelectorAll('aside.sidebar a[href^="#act"]').forEach(a => {{
+    a.addEventListener('click', (e) => {{
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/^#(act\\d)/);
+      if (m) {{
+        // Activate the tab; if the link points at an in-tab panel
+        // (#panel-foo), let the browser scroll to it next frame.
+        activate(m[1]);
+      }}
+    }});
+  }});
+
+  // Also handle history navigation (back/forward).
+  window.addEventListener('hashchange', activateFromHash);
 }})();
 </script>
 </body>
