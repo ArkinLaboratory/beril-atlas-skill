@@ -203,3 +203,84 @@ def test_render_show_project_detail_falls_back_to_global_drawer():
     # New v0.2 fallback: targetId == null means use the global drawer body.
     assert "atlas-global-drawer-body" in snippet
     assert "useGlobalDrawer" in snippet
+
+
+# --------------------------------------------------------------------------
+# v0.2.1 regression: render against a populated warehouse without raising.
+# --------------------------------------------------------------------------
+#
+# The v0.2.0 release shipped with `// back-stack of {kind, id, title, html}`
+# inside the JS template. Python's f-string parser interpreted `{kind}` as a
+# placeholder and raised NameError at render time. Source-text-only tests
+# missed this because the bug only fires when the f-string is evaluated.
+# This test exercises the render path end-to-end with a tiny synthetic
+# warehouse so any future un-doubled curly brace in the template fails CI.
+
+def test_render_main_succeeds_against_populated_warehouse(tmp_path):
+    import argparse
+    from beril_atlas.engine import render as render_mod
+    from beril_atlas.engine.warehouse import create_schema
+
+    db = duckdb.connect(str(tmp_path / "atlas.duckdb"))
+    create_schema(db)
+    now = dt.datetime.utcnow()
+    # Seed: one author, one project_authors row, one entity_mention.
+    db.execute(
+        "INSERT INTO authors VALUES (?,?,?,?,?,?)",
+        ("orcid:9999", "9999", "Smoke Test Author", None, "p1", now))
+    db.execute(
+        "INSERT INTO project_authors VALUES (?,?,?,?,?,?)",
+        ("p1", "orcid:9999", "listed-author", "README", "Smoke", now))
+    db.execute(
+        "INSERT INTO entity_mentions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("m1", "p1", "p1:README:Methods:0", "README", "Methods",
+         "organism", "Smoke organism", "smoke", "smoke quote",
+         0.9, "llm+vocab", "smoke.v1", "organisms=v1", "claude-test",
+         None, now))
+    db.close()
+
+    mdir = tmp_path / "metrics"
+    (mdir / "csv").mkdir(parents=True)
+    (mdir / "run_summary.json").write_text('{"counts": {}}')
+    output = tmp_path / "dashboard.html"
+
+    rc = render_mod.main([
+        "--warehouse", str(tmp_path / "atlas.duckdb"),
+        "--metrics-dir", str(mdir),
+        "--output", str(output),
+    ])
+    assert rc == 0, "render exited non-zero"
+    assert output.exists() and output.stat().st_size > 10_000, \
+        "rendered HTML is too small or missing"
+    text = output.read_text(encoding="utf-8")
+    # The v0.2 entity-drawer JS must be present.
+    assert "ATLAS_ENTITY_DETAILS" in text
+    assert "showEntityDetail" in text
+    assert "showAuthorDetail" in text
+    # And the seeded entity must reach the page.
+    assert "Smoke organism" in text
+
+
+def test_render_main_succeeds_against_empty_warehouse(tmp_path):
+    """Same render path but pre-extract: the JS module renders unconditionally
+    so any f-string brace bug fires here too."""
+    import argparse
+    from beril_atlas.engine import render as render_mod
+    from beril_atlas.engine.warehouse import create_schema
+
+    db = duckdb.connect(str(tmp_path / "atlas.duckdb"))
+    create_schema(db)
+    db.close()
+
+    mdir = tmp_path / "metrics"
+    (mdir / "csv").mkdir(parents=True)
+    (mdir / "run_summary.json").write_text('{"counts": {}}')
+    output = tmp_path / "dashboard.html"
+
+    rc = render_mod.main([
+        "--warehouse", str(tmp_path / "atlas.duckdb"),
+        "--metrics-dir", str(mdir),
+        "--output", str(output),
+    ])
+    assert rc == 0
+    assert output.exists() and output.stat().st_size > 10_000

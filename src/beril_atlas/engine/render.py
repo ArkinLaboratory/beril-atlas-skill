@@ -5460,7 +5460,7 @@ window.showProjectDetail = function(pid, targetId) {{
   const drawerBack = document.getElementById('atlas-global-drawer-back');
   if (!drawer) return;  // pre-2b dashboards may not include the drawer
 
-  const stack = [];  // back-stack of {kind, id, title, html}
+  const stack = [];  // back-stack of {{kind, id, title, html}}
 
   function escapeHtml(s) {{
     return String(s == null ? '' : s)
