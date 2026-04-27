@@ -274,6 +274,98 @@ def test_positive_result_panel_mirrors_negative_structurally():
     assert "#b45309" in neg
 
 
+def test_v038_untracked_projects_fetch_and_render():
+    """v0.3.8: panel surfaces projects with extracted conclusions but
+    no Revision History (NULL completion_date AND
+    NULL effective_completion_date). Caught 2026-04-27 on Adam's hub:
+    4 projects holding 251 conclusions invisible to every trend panel.
+    Surface-only design — do NOT fall back to last_touched in
+    enrich_projects (would lose the diagnostic).
+    """
+    from beril_atlas.engine.render import (
+        fetch_untracked_projects, render_untracked_projects_panel,
+    )
+    from beril_atlas.engine.warehouse import (
+        create_schema, populate_projects, enrich_projects,
+    )
+    from beril_atlas.engine import projects as p_mod
+    import tempfile, json, datetime as _dt
+    from pathlib import Path
+
+    td = Path(tempfile.mkdtemp())
+    db = duckdb.connect(str(td / "atlas.duckdb"))
+    create_schema(db)
+    now = _dt.datetime.utcnow()
+    today = _dt.date.today()
+
+    # 3 projects:
+    #   p_dated   — has revision history, will get effective_completion_date
+    #   p_untracked_loud — no revision history, 5 conclusions  → SHOULD surface
+    #   p_quiet  — no revision history, 0 conclusions  → SHOULD NOT surface
+    projs = [p_mod.Project(
+        project_id=pid, root_path=td/pid, name=pid,
+        last_touched=now.timestamp(), is_git_repo=False,
+        total_bytes=2048, file_count=8, has_notebooks=False, notebook_count=0,
+        has_data_dir=False, has_figures_dir=False, has_references_md=True,
+        canonical_docs_present={"README":True}, file_type_counts={"md":3},
+    ) for pid in ("p_dated", "p_untracked_loud", "p_quiet")]
+    populate_projects(db, projs, now)
+
+    # Only p_dated gets a revision (so it gets effective_completion_date)
+    db.executemany(
+        "INSERT INTO project_revisions VALUES (?,?,?,?,?,?,?,?,?)",
+        [("p_dated:R:v1#x", "p_dated", "RESEARCH_PLAN", "v1",
+          today - dt.timedelta(days=15), "day", "plan", "v1", now)])
+    enrich_projects(db)
+
+    # Conclusions: 3 for p_dated, 5 for p_untracked_loud, 0 for p_quiet.
+    seed = []
+    for pid, n in [("p_dated", 3), ("p_untracked_loud", 5)]:
+        for i in range(n):
+            seed.append((f"{pid}-em-{i}", pid, f"{pid}:R:F:{i}", "README",
+                         "Findings", "conclusion", f"claim:c{i}",
+                         f"{pid} claim {i}", "q", 0.7, "llm", "x", "v1",
+                         "test", json.dumps({"claim_type": "descriptive"}), now))
+    db.executemany(
+        "INSERT INTO entity_mentions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", seed)
+
+    rows = fetch_untracked_projects(db)
+    db.close()
+
+    pids = {r["project_id"] for r in rows}
+    # p_dated has a date → not untracked. p_quiet has 0 conclusions → not surfaced.
+    # p_untracked_loud is the only one that should appear.
+    assert pids == {"p_untracked_loud"}, \
+        f"expected exactly p_untracked_loud, got {sorted(pids)}"
+    untracked = rows[0]
+    assert untracked["conclusion_count"] == 5
+    assert untracked["last_touched"]  # populated
+
+    # Render: panel HTML should contain the project_id, the conclusion count,
+    # and the surface-only caveat in the panel-claim.
+    html = render_untracked_projects_panel(rows)
+    assert "panel-untracked-projects" in html
+    assert "p_untracked_loud" in html
+    assert "5" in html  # conclusion_count
+    # Caveat language should explain the surface-only design.
+    assert "Revision History" in html
+    assert "does <em>not</em> silently fall back" in html or \
+           "do NOT silently fall back" in html or \
+           "does not silently fall back" in html or \
+           "<em>not</em> silently" in html
+    # Sortable+filterable table primitive
+    assert 'class="sortable filterable"' in html
+
+
+def test_v038_untracked_projects_empty_when_all_have_dates():
+    """If every project has a completion_date OR effective_completion_date,
+    the panel renders the 'No dropouts' empty-state message."""
+    from beril_atlas.engine.render import render_untracked_projects_panel
+    html = render_untracked_projects_panel([])
+    assert "No dropouts" in html
+    assert "panel-untracked-projects" in html
+
+
 def test_v036_discoveries_drawer_per_project_cap():
     """v0.3.6 regression: per-bucket sampling must represent every contributing
     project, not concentrate in the alphabetically-first one.

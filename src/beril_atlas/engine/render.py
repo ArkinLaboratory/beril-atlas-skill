@@ -1855,6 +1855,70 @@ def fetch_positive_result_rate(con):
     }
 
 
+def fetch_untracked_projects(con):
+    """v0.3.8: projects with extracted conclusions but NULL completion_date
+    AND NULL effective_completion_date — invisible to every trend panel.
+
+    Caught 2026-04-27 on Adam's hub: 4 projects (field_vs_lab_fitness,
+    enigma_contamination_functional_potential, costly_dispensable_genes,
+    amr_strain_variation) had 251 conclusions between them but no Revision
+    History, so trend panels filtered them out via the IS NOT NULL clause.
+
+    Surface-only design: list them so the dropout is visible. Do NOT fall
+    back to last_touched in enrich_projects — that would invent dates and
+    lose the diagnostic. Fix is data-side (add Revision History to the
+    project's RESEARCH_PLAN or REPORT). This panel makes the gap visible.
+    """
+    rows = con.execute("""
+        WITH conclusion_counts AS (
+          SELECT project_id, COUNT(*) AS conclusion_count
+          FROM entity_mentions
+          WHERE entity_kind = 'conclusion'
+          GROUP BY project_id
+        )
+        SELECT p.project_id,
+               p.last_touched,
+               p.total_bytes,
+               p.file_count,
+               COALESCE(cc.conclusion_count, 0) AS conclusion_count
+        FROM projects p
+        LEFT JOIN conclusion_counts cc USING(project_id)
+        WHERE p.completion_date IS NULL
+          AND p.effective_completion_date IS NULL
+          AND COALESCE(cc.conclusion_count, 0) > 0
+        ORDER BY conclusion_count DESC, p.last_touched DESC
+    """).fetchall()
+    if not rows:
+        return []
+
+    pid_set = {r[0] for r in rows}
+    placeholders = ",".join(["?"] * len(pid_set))
+    author_map: dict = {p: [] for p in pid_set}
+    for pid, name, orcid in con.execute(f"""
+        SELECT DISTINCT pa.project_id, a.canonical_name, a.orcid_id
+        FROM project_authors pa
+        JOIN authors a USING(author_id)
+        WHERE pa.project_id IN ({placeholders})
+        ORDER BY pa.project_id, a.canonical_name
+    """, list(pid_set)).fetchall():
+        author_map[pid].append({"name": name, "orcid": orcid})
+
+    out = []
+    for r in rows:
+        last_touched_dt = r[1]
+        # last_touched is stored as TIMESTAMP; format as ISO date.
+        last_str = last_touched_dt.strftime("%Y-%m-%d") if last_touched_dt else ""
+        out.append({
+            "project_id": r[0],
+            "last_touched": last_str,
+            "total_bytes": r[2] or 0,
+            "file_count": r[3] or 0,
+            "conclusion_count": r[4],
+            "authors": author_map.get(r[0], []),
+        })
+    return out
+
+
 def fetch_whats_stuck(con, days_threshold: int = 30):
     """v0.3.2: projects whose latest revision is more than N days ago.
     Surfaces stalled work — projects with revision history but no recent
@@ -4567,6 +4631,85 @@ def render_whats_stuck_panel(rows):
     """
 
 
+def render_untracked_projects_panel(rows):
+    """v0.3.8: Act-3 panel listing projects with extracted conclusions but
+    no Revision History. These projects are invisible to every trend panel
+    because trend SQL filters on
+    COALESCE(effective_completion_date, completion_date) IS NOT NULL.
+
+    Surface-only design: shows the data omission so the user can decide
+    whether to add a Revision History entry to the project's
+    RESEARCH_PLAN/REPORT. Do NOT silently fall back to last_touched — that
+    would lose the diagnostic.
+    """
+    if not rows:
+        return """<div id="panel-untracked-projects" class="panel">
+          <div class="panel-header"><h3>Untracked projects — no Revision History</h3></div>
+          <p style="color:#666;">All projects with extracted conclusions also have at least one dated revision in their RESEARCH_PLAN or REPORT. No dropouts.</p></div>"""
+    total_dropped = sum(r["conclusion_count"] for r in rows)
+    body_rows = []
+    for r in rows:
+        pid = html.escape(r["project_id"])
+        last = html.escape(r.get("last_touched") or "")
+        n_concl = r["conclusion_count"]
+        n_files = r["file_count"]
+        size_kb = (r["total_bytes"] or 0) // 1024
+        authors_html = ", ".join(
+            f'<span data-author-id="{html.escape(a.get("name") or "")}" '
+            f'style="cursor:pointer; color:#047857; text-decoration:underline;">'
+            f'{html.escape(a.get("name") or "?")}</span>'
+            for a in (r.get("authors") or [])
+        ) or '<em style="color:#999;">none recorded</em>'
+        body_rows.append(
+            f'<tr>'
+            f'<td><code data-project-id="{pid}" '
+            f'style="cursor:pointer; color:#1e40af; text-decoration:underline;" '
+            f"onclick=\"window.showProjectDetail('{pid}', null)\">{pid}</code></td>"
+            f'<td>{last}</td>'
+            f'<td style="text-align:right;">{n_concl}</td>'
+            f'<td style="text-align:right;">{n_files}</td>'
+            f'<td style="text-align:right;">{size_kb:,}</td>'
+            f'<td>{authors_html}</td>'
+            f'</tr>'
+        )
+    return f"""
+    <div id="panel-untracked-projects" class="panel">
+      <div class="panel-header">
+        <h3>Untracked projects — extracted conclusions invisible to trend panels {_csv_link('projects')}</h3>
+        <span class="tag tag-real">real</span>
+      </div>
+      <div class="panel-claim">
+        These <strong>{len(rows)} project{'s' if len(rows) != 1 else ''}</strong>
+        have extracted conclusions
+        (<strong>{total_dropped:,} total</strong>) but neither a
+        <code>completion_date</code> nor an
+        <code>effective_completion_date</code>. Both come from dated entries
+        in the project's RESEARCH_PLAN or REPORT Revision History; without
+        any such entry, the project's <code>last_touched</code> filesystem
+        time is the only signal that it exists, and the trend panels filter
+        it out (they need a real completion date to bucket by month).
+        <br><br>
+        <strong>What to do:</strong> add a Revision History entry to the
+        project's RESEARCH_PLAN or REPORT (atlas re-scans will pick it up).
+        Atlas does <em>not</em> silently fall back to <code>last_touched</code>
+        — that would conflate filesystem mtimes with intentional research
+        dates and lose this exact signal.
+      </div>
+      <table class="sortable filterable">
+        <thead><tr>
+          <th>Project</th>
+          <th>Last touched (filesystem)</th>
+          <th style="text-align:right;">Conclusions</th>
+          <th style="text-align:right;">Files</th>
+          <th style="text-align:right;">Size (KB)</th>
+          <th>Authors</th>
+        </tr></thead>
+        <tbody>{''.join(body_rows)}</tbody>
+      </table>
+    </div>
+    """
+
+
 def render_transitive_reach_panel(reach):
     """Act-4 scatter: in_degree × 2-hop_in_degree, color by cross-author
     downstream authors. Shows 'how far do ideas propagate'."""
@@ -5608,6 +5751,7 @@ def main(argv=None):
     positive_result_rate = (fetch_positive_result_rate(con)
                              if not partial_phase_2b else [])
     whats_stuck = fetch_whats_stuck(con)
+    untracked_projects = fetch_untracked_projects(con) if not partial_phase_2b else []
     metrics_to_watch = fetch_metrics_to_watch(con)
     edge_type_bundle = fetch_edge_type_summary(con)
     revision_kind_bundle = fetch_revision_kind_summary(con)
@@ -6157,6 +6301,7 @@ window.showProjectDetail = function(pid, targetId) {{
   {render_author_gantt_panel(gantt_data)}
   {render_author_interaction_panel(author_interaction)}
   {render_whats_stuck_panel(whats_stuck)}
+  {render_untracked_projects_panel(untracked_projects)}
   {render_research_lines_panel(research_lines, line_handoffs, line_subclusters)}
   {render_subcluster_meta_graph_panel(subcluster_meta)}
 </div>

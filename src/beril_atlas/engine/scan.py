@@ -77,6 +77,25 @@ def parse_args(argv: list[str] = None) -> argparse.Namespace:
     parser.add_argument("--extract-limit", type=int, default=None,
                         help="If --extract is set, limit extraction to this many sections "
                              "(useful for incremental verification).")
+    # v0.3.8: cache-locating flags. Default cache lives at
+    # outputs_root/extraction_cache.duckdb (per-run, cold on fresh
+    # timestamp). --cache-path and --seed-cache-from let users persist
+    # cache hits across runs without copying files manually.
+    parser.add_argument("--cache-path", type=Path, default=None,
+                        help="Path to the L2 extraction cache DuckDB file. "
+                             "If set, this overrides the default of "
+                             "<outputs-root>/extraction_cache.duckdb. Use a "
+                             "stable path (e.g., ~/.beril-atlas/cache/extraction_cache.duckdb) "
+                             "to keep cache hits across runs with fresh "
+                             "--outputs-root timestamps.")
+    parser.add_argument("--seed-cache-from", type=Path, default=None,
+                        help="Path to a prior extraction_cache.duckdb to copy "
+                             "into the destination cache before extraction "
+                             "starts. Useful when you want a fresh "
+                             "--outputs-root but warm-cache from a prior scan. "
+                             "Refuses to overwrite an existing destination "
+                             "cache (delete it first if you really want a "
+                             "fresh seed).")
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args(argv)
 
@@ -197,6 +216,8 @@ def main(argv: list[str] = None) -> int:
             observed_at=observed_at,
             limit=args.extract_limit,
             quiet=quiet,
+            cache_path=args.cache_path,
+            seed_cache_from=args.seed_cache_from,
         )
 
     # Sophistication + research-lines are always recomputed as the LAST step
@@ -334,7 +355,10 @@ def main(argv: list[str] = None) -> int:
     files_generated = [str(warehouse_path)]
     if extract_summary.get("requested") and extract_summary.get("drift_report_path"):
         files_generated.append(extract_summary["drift_report_path"])
-        files_generated.append(str(args.outputs_root / "extraction_cache.duckdb"))
+        # v0.3.8: cache may be at outputs_root or at user-supplied --cache-path
+        files_generated.append(extract_summary.get(
+            "cache_path",
+            str(args.outputs_root / "extraction_cache.duckdb")))
     manifest = {
         "run_id": run_id,
         "atlas_version": ATLAS_VERSION,
@@ -405,9 +429,45 @@ def main(argv: list[str] = None) -> int:
         return 1
 
 
+def _resolve_cache_path(*, outputs_root: Path,
+                          cache_path: Path = None,
+                          seed_cache_from: Path = None) -> Path:
+    """v0.3.8: resolve the L2 extraction-cache path with override + seed
+    support.
+
+    - cache_path None, seed_cache_from None  → outputs_root/extraction_cache.duckdb (default)
+    - cache_path set, seed_cache_from None    → cache_path (use as-is)
+    - seed_cache_from set                     → copy seed → resolved path; refuse to clobber
+
+    Raises FileNotFoundError if seed_cache_from doesn't exist.
+    Raises FileExistsError if seed_cache_from is set but the destination
+    cache already exists (refuses silent clobber).
+    Raises FileNotFoundError if seed_cache_from doesn't exist.
+
+    Returns the resolved cache path. Callers pass it to
+    ExtractionCache(path).
+    """
+    resolved = cache_path or (outputs_root / "extraction_cache.duckdb")
+    if seed_cache_from is not None:
+        if not seed_cache_from.exists():
+            raise FileNotFoundError(
+                f"--seed-cache-from path does not exist: {seed_cache_from}")
+        if resolved.exists():
+            raise FileExistsError(
+                f"--seed-cache-from refuses to clobber existing cache at "
+                f"{resolved}. Delete it first or omit --seed-cache-from "
+                f"to use the existing cache as-is.")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy2(seed_cache_from, resolved)
+    return resolved
+
+
 def _run_l2_extraction(*, sections, outputs_root: Path,
                         con, observed_at: dt.datetime,
-                        limit: int = None, quiet: bool = False) -> dict:
+                        limit: int = None, quiet: bool = False,
+                        cache_path: Path = None,
+                        seed_cache_from: Path = None) -> dict:
     """Run UniversalExtractor over sections, populate warehouse, write drift report.
 
     Lazy imports keep this module importable without LLM deps for L1-only runs.
@@ -454,7 +514,24 @@ def _run_l2_extraction(*, sections, outputs_root: Path,
     }
     cfg = lcfg_mod.load_atlas_config()
     client = lc_mod.build_client(cfg)
-    cache = ec_mod.ExtractionCache(outputs_root / "extraction_cache.duckdb")
+
+    # v0.3.8: resolve cache_path with override + seed support.
+    # Default — per-run cache inside outputs_root (fresh timestamp =
+    # cold cache, same as v0.3.7 and earlier).
+    # --cache-path — persistent cache anywhere on disk; reused across runs.
+    # --seed-cache-from — copy a prior cache into the destination before
+    #                     extraction. Refuses to overwrite an existing dest.
+    resolved_cache_path = _resolve_cache_path(
+        outputs_root=outputs_root,
+        cache_path=cache_path,
+        seed_cache_from=seed_cache_from,
+    )
+    if seed_cache_from is not None:
+        _log(f"L2 extraction: seeded cache from {seed_cache_from} → {resolved_cache_path}", quiet)
+    else:
+        _log(f"L2 extraction: cache at {resolved_cache_path}", quiet)
+
+    cache = ec_mod.ExtractionCache(resolved_cache_path)
     extractor = UniversalExtractor(
         vocabularies=vocabs,
         llm=client,
@@ -575,6 +652,7 @@ def _run_l2_extraction(*, sections, outputs_root: Path,
         "total_tokens": total_tokens,
         "errors": errors,
         "drift_report_path": str(drift_path),
+        "cache_path": str(resolved_cache_path),
     }
 
 
