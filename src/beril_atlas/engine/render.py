@@ -596,13 +596,23 @@ def fetch_topic_trends(con, kind: str, top_k: int = 10):
     return [{"canonical": r[0], "series": out.get(r[0], [])} for r in ranked]
 
 
-def fetch_claims_by_month_and_type(con, limit_per_cell=20):
+def fetch_claims_by_month_and_type(con, per_project_cap=20):
     """Per (completion-month, claim_type) bucket: individual conclusion claims
     with their project + source quote. Drives the click-to-see drawer on the
-    discoveries timeline. Limited per cell to keep the embedded JSON small."""
-    # v0.3.2: effective_completion_date so April work surfaces.
+    discoveries timeline.
+
+    v0.3.6: per-project cap (default 20) replaces the previous overall
+    limit_per_cell. Pre-v0.3.6 the query had ORDER BY (project_id, mention_id)
+    + LIMIT rn<=20, so the alphabetically-first project with ≥20 claims filled
+    the entire 20-slot bucket. Buckets that should have shown 5 projects
+    showed only 1 (caught 2026-04-27 on Adam's hub: April descriptive bucket
+    showed only enigma_sso_asv_ecology even though 5 April projects
+    contributed). The drawer now renders a sortable+filterable table — user
+    filters to a specific project to focus, sorts by source_section to group.
+    Per-project cap keeps the JSON payload bounded; with ~5 projects per
+    bucket × 6 claim_types × N months, total is ~6N × 100 rows = small."""
     rows = con.execute(f"""
-        WITH dated AS (
+        WITH ranked AS (
           SELECT strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m') AS month,
                  COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
                           'unclassified') AS claim_type,
@@ -614,9 +624,10 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
                  ROW_NUMBER() OVER (
                    PARTITION BY strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m'),
                                 COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
-                                         'unclassified')
-                   ORDER BY em.project_id, em.mention_id
-                 ) AS rn
+                                         'unclassified'),
+                                em.project_id
+                   ORDER BY em.mention_id
+                 ) AS proj_rank
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
@@ -624,9 +635,9 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
         )
         SELECT month, claim_type, project_id, source_doc, source_section,
                claim_text, source_quote
-        FROM dated
-        WHERE rn <= {limit_per_cell}
-        ORDER BY month, claim_type, project_id
+        FROM ranked
+        WHERE proj_rank <= {per_project_cap}
+        ORDER BY month, claim_type, project_id, source_section
     """).fetchall()
     bucket: dict = {}
     for r in rows:
@@ -4032,10 +4043,19 @@ def render_revision_kinds_panel(bundle):
           name: s.kind, type: 'bar',
           marker: {{color: palette[s.kind] || '#333'}},
         }}));
+        // v0.3.6: explicit monthly ticks; see render_topic_trends_panel.
+        const tickTextRK = months.map(m => {{
+          const [y, mo] = m.split('-');
+          const lab = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo,10)-1];
+          return lab + ' ' + y;
+        }});
         Plotly.newPlot('chart-revision-kinds', stackedTraces, {{
           barmode: 'stack',
           margin:{{l:50,r:20,t:50,b:60}},
-          xaxis:{{title:'Revision month'}},
+          xaxis:{{
+            title:'Revision month',
+            tickmode:'array', tickvals: months, ticktext: tickTextRK,
+          }},
           yaxis:{{title:'Revisions', rangemode:'tozero'}},
           legend:{{orientation:'h', y:-0.25, font:{{size:10}}}},
           height:400,
@@ -4195,6 +4215,13 @@ def render_negative_result_rate_panel(bundle):
 
         function renderMonthView() {{
           const d = D.by_month;
+          // v0.3.6: explicit monthly ticks; see render_topic_trends_panel.
+          const monthsN = d.map(r => r.month);
+          const tickTextN = monthsN.map(m => {{
+            const [y, mo] = m.split('-');
+            const lab = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo,10)-1];
+            return lab + ' ' + y;
+          }});
           Plotly.newPlot('chart-negative-result-rate', [
             {{
               x: d.map(r => r.month), y: d.map(r => r.total),
@@ -4213,7 +4240,10 @@ def render_negative_result_rate_panel(bundle):
             }},
           ], {{
             margin:{{l:50,r:50,t:50,b:40}},
-            xaxis:{{title:'Project completion month'}},
+            xaxis:{{
+              title:'Project completion month',
+              tickmode:'array', tickvals: monthsN, ticktext: tickTextN,
+            }},
             yaxis:{{title:'Negative-result share', tickformat:'.0%', range:[0,0.5]}},
             yaxis2:{{title:'Total conclusions', overlaying:'y', side:'right',
                      showgrid:false, rangemode:'tozero'}},
@@ -4289,20 +4319,29 @@ def render_negative_result_rate_panel(bundle):
 
 
 def render_positive_result_rate_panel(bundle):
-    """v0.3.2: Act-5 panel symmetric to negative-result-rate. Tracks share
+    """v0.3.5: Act-5 panel symmetric to negative-result-rate. Tracks share
     of conclusions tagged as `mechanistic` or `predictive` — proxy for
-    analytical depth. Single monthly trend (no per-project toggle; the
-    discoveries-timeline panel already drills there).
+    analytical depth. Two views (toggle): per-completion-month trend and
+    per-project leaders. Click a point/bar to drill into actual mechanistic
+    + predictive claims; each sample carries a claim_type tag distinguishing
+    mechanistic from predictive (negative panel doesn't need this — only
+    one type contributes there).
 
     Together with the negative-result panel: rising negative share =
     research hygiene. Rising positive share = analytical depth growing.
     Both flat = neither hygiene nor depth advancing."""
-    by_month = bundle.get("by_month", []) if isinstance(bundle, dict) else []
-    if not by_month:
+    by_month = bundle.get("by_month", []) if isinstance(bundle, dict) else (bundle or [])
+    by_project = bundle.get("by_project", []) if isinstance(bundle, dict) else []
+    samples = bundle.get("samples", {}) if isinstance(bundle, dict) else {}
+    if not by_month and not by_project:
         return """<div id="panel-positive-result-rate" class="panel">
           <div class="panel-header"><h3>Positive-result reporting (mechanistic + predictive)</h3></div>
           <p style="color:#666;">Awaiting Phase 2b extraction — no conclusion data yet.</p></div>"""
-    data_js = json.dumps(by_month)
+    # Per-project: only show projects with ≥5 conclusions to avoid noise from tiny N
+    by_project_signal = [p for p in by_project if p["total"] >= 5]
+    data_js = json.dumps({"by_month": by_month,
+                           "by_project": by_project_signal,
+                           "samples": samples})
     return f"""
     <div id="panel-positive-result-rate" class="panel">
       <div class="panel-header">
@@ -4315,41 +4354,156 @@ def render_positive_result_rate_panel(bundle):
         the negative-result-rate panel above. Mechanistic claims explain
         <em>why</em> something happens; predictive claims forecast what
         future data should show. Together they're the depth half of the
-        analytical-output mix. Rising share suggests the corpus is doing
-        more deep analysis. Time axis is project completion (or latest
-        revision for in-flight projects).
+        analytical-output mix.
+        <strong>Toggle</strong> between monthly trend and per-project view.
+        <strong>Click</strong> a point or bar to drill into actual
+        mechanistic + predictive claims for that slice; each sample carries
+        a tag distinguishing the two types. Projects with &lt;5 total
+        claims are excluded from the per-project view (too noisy).
       </div>
       <div id="chart-positive-result-rate" class="chart"></div>
+      <div id="positive-result-detail" class="detail-panel" style="margin-top:0.5rem;">
+        <h4>Sample mechanistic + predictive claims</h4>
+        <p style="color:#666; font-style:italic;">Click a point (month view) or bar (project view) to see examples.</p>
+      </div>
     </div>
     <script>
       (function() {{
-        const d = {data_js};
-        Plotly.newPlot('chart-positive-result-rate', [
-          {{
-            x: d.map(r => r.month), y: d.map(r => r.total),
-            type: 'bar', name: 'Total conclusions',
-            marker: {{color: 'rgba(100,100,100,0.18)'}},
-            yaxis: 'y2',
-            hovertemplate: '%{{x}}: %{{y}} total conclusions<extra></extra>',
-          }},
-          {{
-            x: d.map(r => r.month), y: d.map(r => r.rate),
-            type: 'scatter', mode: 'lines+markers',
-            name: 'Mechanistic + predictive share',
-            line: {{color: '#047857', width: 3}},
-            marker: {{size: 11}},
-            hovertemplate: '%{{x}}: %{{y:.1%}} (%{{customdata[0]}}/%{{customdata[1]}})<extra></extra>',
-            customdata: d.map(r => [r.positive, r.total]),
-          }},
-        ], {{
-          margin:{{l:50,r:50,t:30,b:40}},
-          xaxis:{{title:'Project completion month'}},
-          yaxis:{{title:'Positive-result share', tickformat:'.0%', range:[0, 0.6]}},
-          yaxis2:{{title:'Total conclusions', overlaying:'y', side:'right',
-                   showgrid:false, rangemode:'tozero'}},
-          legend:{{orientation:'h', y:-0.2}},
-          height: 320,
-        }}, {{responsive:true, displayModeBar:false}});
+        const D = {data_js};
+        const drawer = document.getElementById('positive-result-detail');
+
+        function tagFor(ct) {{
+          if (ct === 'mechanistic') return '<span style="background:#d1fae5; color:#065f46; padding:1px 6px; border-radius:3px; font-size:0.7rem; margin-right:4px;">mechanistic</span>';
+          if (ct === 'predictive')  return '<span style="background:#dbeafe; color:#1e40af; padding:1px 6px; border-radius:3px; font-size:0.7rem; margin-right:4px;">predictive</span>';
+          return '';
+        }}
+
+        function showSamples(title, pids) {{
+          if (!pids || pids.length === 0) {{
+            drawer.innerHTML = '<h4>' + title + '</h4>' +
+              '<p style="color:#666;">Switch to per-project view to drill into specific positive-result claims.</p>';
+            return;
+          }}
+          const items = [];
+          pids.forEach(pid => {{
+            const lst = D.samples[pid] || [];
+            if (lst.length === 0) return;
+            items.push('<h5 style="margin:0.7rem 0 0.3rem;"><code>' + pid + '</code></h5>');
+            lst.forEach(s => {{
+              items.push('<li style="margin-bottom:0.5rem;">'
+                + tagFor(s.claim_type)
+                + '<span style="font-size:0.88rem; color:#1f2937;">' + s.text + '</span>'
+                + (s.source_section ? '<div style="font-size:0.75rem; color:#666;">§' + s.source_section + '</div>' : '')
+                + (s.source_quote ? '<div style="font-size:0.75rem; color:#888; font-style:italic;">quote: ' + s.source_quote + '</div>' : '')
+                + '</li>');
+            }});
+          }});
+          if (items.length === 0) {{
+            drawer.innerHTML = '<h4>' + title + '</h4>' +
+              '<p style="color:#666;">No mechanistic or predictive claims recorded for this project.</p>';
+            return;
+          }}
+          drawer.innerHTML = '<h4>' + title + '</h4><ul>' + items.join('') + '</ul>';
+        }}
+
+        function renderMonthView() {{
+          const d = D.by_month;
+          // v0.3.6: explicit monthly ticks; see render_topic_trends_panel.
+          const monthsP = d.map(r => r.month);
+          const tickTextP = monthsP.map(m => {{
+            const [y, mo] = m.split('-');
+            const lab = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo,10)-1];
+            return lab + ' ' + y;
+          }});
+          Plotly.newPlot('chart-positive-result-rate', [
+            {{
+              x: d.map(r => r.month), y: d.map(r => r.total),
+              type: 'bar', name: 'Total conclusions',
+              marker: {{color: 'rgba(100,100,100,0.18)'}},
+              yaxis: 'y2',
+              hovertemplate: '%{{x}}: %{{y}} total conclusions<extra></extra>',
+            }},
+            {{
+              x: d.map(r => r.month), y: d.map(r => r.rate),
+              type: 'scatter', mode: 'lines+markers',
+              name: 'Mechanistic + predictive share',
+              line: {{color: '#047857', width: 3}},
+              marker: {{size: 11}},
+              hovertemplate: '%{{x}}: %{{y:.1%}} (%{{customdata[0]}}/%{{customdata[1]}})<extra></extra>',
+              customdata: d.map(r => [r.positive, r.total]),
+            }},
+          ], {{
+            margin:{{l:50,r:50,t:50,b:40}},
+            xaxis:{{
+              title:'Project completion month',
+              tickmode:'array', tickvals: monthsP, ticktext: tickTextP,
+            }},
+            yaxis:{{title:'Positive-result share', tickformat:'.0%', range:[0, 0.6]}},
+            yaxis2:{{title:'Total conclusions', overlaying:'y', side:'right',
+                     showgrid:false, rangemode:'tozero'}},
+            legend:{{orientation:'h', y:-0.2}},
+            height: 360,
+            updatemenus: menus,
+          }}, {{responsive:true, displayModeBar:false}});
+          document.getElementById('chart-positive-result-rate').on('plotly_click', (e) => {{
+            if (e.points[0].curveNumber === 1) {{ // clicked the share line
+              showSamples('Samples for ' + e.points[0].x, []);
+            }}
+          }});
+        }}
+
+        function renderProjectView() {{
+          const d = D.by_project;
+          Plotly.newPlot('chart-positive-result-rate', [
+            {{
+              type: 'bar', orientation: 'h',
+              y: d.map(r => r.project_id),
+              x: d.map(r => r.rate),
+              text: d.map(r => r.positive + '/' + r.total),
+              textposition: 'outside',
+              marker: {{color: d.map(r => r.rate),
+                        colorscale: [[0, '#d1fae5'], [0.5, '#10b981'], [1, '#047857']],
+                        cmin: 0, cmax: 0.6}},
+              customdata: d.map(r => [r.project_id, r.positive, r.total]),
+              hovertemplate: '<b>%{{customdata[0]}}</b><br>' +
+                             '%{{customdata[1]}}/%{{customdata[2]}} claims<br>' +
+                             '%{{x:.1%}} share<extra></extra>',
+            }},
+          ], {{
+            margin:{{l:220,r:50,t:50,b:40}},
+            xaxis:{{title:'Positive-result share', tickformat:'.0%'}},
+            yaxis:{{automargin: true, autorange: 'reversed'}},
+            height: Math.max(360, d.length * 20 + 80),
+            updatemenus: menus,
+          }}, {{responsive:true, displayModeBar:false}});
+          document.getElementById('chart-positive-result-rate').on('plotly_click', (e) => {{
+            const pid = e.points[0].customdata[0];
+            showSamples(pid, [pid]);
+          }});
+        }}
+
+        const menus = [{{
+          type:'buttons', direction:'left',
+          x:1.0, xanchor:'right', y:1.1, yanchor:'top',
+          showactive:true, active:0, pad:{{r:4, t:0}},
+          buttons:[
+            {{label:'Monthly',     method:'skip',   execute: false}},
+            {{label:'Per-project', method:'skip',   execute: false}},
+          ],
+        }}];
+
+        // Initial view: monthly if we have ≥2 months of data, else project view
+        if (D.by_month.length >= 2) {{
+          renderMonthView();
+        }} else {{
+          renderProjectView();
+        }}
+
+        document.getElementById('chart-positive-result-rate')
+          .on('plotly_buttonclicked', (e) => {{
+            if (e.button.label === 'Monthly') renderMonthView();
+            else if (e.button.label === 'Per-project') renderProjectView();
+          }});
       }})();
     </script>
     """
@@ -4549,9 +4703,26 @@ def render_topic_trends_panel(trends, title, kind, panel_id, csv_name):
           marker: {{size: 7}},
           hovertemplate: '<b>' + t.canonical + '</b><br>%{{x}}: %{{y}} cumulative mentions<extra></extra>',
         }}));
+        // v0.3.6: monthly tick labels. Plotly's auto-tick on a 3-month range
+        // chose weekly ticks (Feb 1 ... Mar 29) and never labeled "Apr 2026",
+        // making the rightmost datapoint look like it sat in unlabeled space —
+        // the eye read it as "no data after April 1." Force one labeled tick
+        // per month with data + pad the right side so the last point isn't
+        // crammed against the chart edge.
+        const monthsSet = new Set();
+        D.forEach(t => t.series.forEach(s => monthsSet.add(s.month)));
+        const months = Array.from(monthsSet).sort();
+        const tickText = months.map(m => {{
+          const [y, mo] = m.split('-');
+          const lab = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo,10)-1];
+          return lab + ' ' + y;
+        }});
         Plotly.newPlot('{chart_id}', traces, {{
-          margin:{{l:50,r:20,t:20,b:40}},
-          xaxis:{{title:'Project completion month'}},
+          margin:{{l:50,r:30,t:20,b:40}},
+          xaxis:{{
+            title:'Project completion month',
+            tickmode:'array', tickvals: months, ticktext: tickText,
+          }},
           yaxis:{{title:'Cumulative mentions'}},
           legend:{{orientation:'h', y:-0.25, font:{{size:10}}}},
           height:440,
@@ -4695,13 +4866,35 @@ def render_discoveries_timeline(rows, claims_by_bucket=None):
           marker: {{size: 9, opacity: 0.9}},
           hovertemplate: s.claim_type + '<br>%{{x}}: %{{y}} cumulative<br><em>click for samples</em><extra></extra>',
         }}));
+        // v0.3.6: monthly tick labels — same fix as the topic-trends panels.
+        // Plotly auto-ticks chose weekly ticks (Feb 1 ... Mar 29) and never
+        // labeled Apr 2026 even though April datapoints existed.
+        const monthsSetD = new Set();
+        d.series.forEach(s => s.months.forEach(m => monthsSetD.add(m)));
+        const monthsD = Array.from(monthsSetD).sort();
+        const tickTextD = monthsD.map(m => {{
+          const [y, mo] = m.split('-');
+          const lab = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(mo,10)-1];
+          return lab + ' ' + y;
+        }});
         Plotly.newPlot('chart-discoveries', traces, {{
-          margin:{{l:50,r:20,t:30,b:40}},
-          xaxis:{{title:'Project completion month'}},
+          margin:{{l:50,r:30,t:30,b:40}},
+          xaxis:{{
+            title:'Project completion month',
+            tickmode:'array', tickvals: monthsD, ticktext: tickTextD,
+          }},
           yaxis:{{title:'Cumulative claims'}},
           legend:{{orientation:'h', y:-0.2}},
           height:380,
         }}, {{responsive:true, displayModeBar:false}});
+        // v0.3.6: drawer renders a sortable+filterable table (one row per
+        // claim) instead of a flat <ul>. Per-project cap of 20 in the SQL
+        // bounds payload size; user filters/sorts to focus. Distinct-project
+        // count surfaced in the title so coverage is visible at a glance.
+        function escHtml(s) {{
+          return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }}
         document.getElementById('chart-discoveries').on('plotly_click', (e) => {{
           const key = e.points[0].customdata;
           if (!key) return;
@@ -4713,19 +4906,42 @@ def render_discoveries_timeline(rows, claims_by_bucket=None):
               <p style="color:#666;">No claim samples available for this bucket.</p>`;
             return;
           }}
-          const items = samples.map(s => `
-            <li style="margin-bottom:0.6rem; padding-left:0.2rem; border-left:2px solid ${{palette[claimType] || '#999'}};">
-              <div style="font-size:0.9rem;">${{s.claim_text || '<em>(no claim text)</em>'}}</div>
-              <div style="font-size:0.75rem; color:#666; margin-top:0.2rem;">
-                <code>${{s.project_id}}</code> · ${{s.source_doc}} §${{s.source_section}}
-              </div>
-              ${{s.source_quote ? `<div style="font-size:0.8rem; color:#374151; margin-top:0.2rem; font-style:italic;">"${{s.source_quote}}"</div>` : ''}}
-            </li>
+          const projectSet = new Set(samples.map(s => s.project_id));
+          const rowsHtml = samples.map(s => `
+            <tr>
+              <td style="vertical-align:top; white-space:nowrap;"><code>${{escHtml(s.project_id)}}</code></td>
+              <td style="vertical-align:top; white-space:nowrap; font-size:0.85rem; color:#475569;">${{escHtml(s.source_doc)}} §${{escHtml(s.source_section)}}</td>
+              <td style="vertical-align:top; font-size:0.9rem;">${{escHtml(s.claim_text) || '<em>(no claim text)</em>'}}</td>
+              <td style="vertical-align:top; font-size:0.85rem; color:#374151; font-style:italic;">${{s.source_quote ? '"' + escHtml(s.source_quote) + '"' : ''}}</td>
+            </tr>
           `).join('');
           drawer.innerHTML = `
-            <h4>${{month}} · ${{claimType}} <span style="font-size:0.8em; font-weight:400; color:#666;">(${{samples.length}} shown, capped at 20 per cell)</span></h4>
-            <ul style="padding-left:1.2rem; margin:0;">${{items}}</ul>
+            <h4 style="border-left:3px solid ${{palette[claimType] || '#999'}}; padding-left:0.5rem;">
+              ${{escHtml(month)}} · ${{escHtml(claimType)}}
+              <span style="font-size:0.8em; font-weight:400; color:#666;">
+                (${{samples.length}} claim${{samples.length===1?'':'s'}} from ${{projectSet.size}} project${{projectSet.size===1?'':'s'}}; capped at 20 per project)
+              </span>
+            </h4>
+            <table class="sortable filterable" style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr style="background:#f1f5f9; text-align:left; border-bottom:2px solid #cbd5e1;">
+                  <th style="padding:0.4rem 0.5rem;">Project</th>
+                  <th style="padding:0.4rem 0.5rem;">Source</th>
+                  <th style="padding:0.4rem 0.5rem;">Claim</th>
+                  <th style="padding:0.4rem 0.5rem;">Verbatim quote</th>
+                </tr>
+              </thead>
+              <tbody>${{rowsHtml}}</tbody>
+            </table>
           `;
+          // Wire the freshly-injected table to the sortable+filterable JS
+          // (registered globally as window.wireTablesIn in the dashboard's
+          // bottom IIFE; idempotent via data-*-wired attributes).
+          if (window.wireTablesIn) {{
+            window.wireTablesIn(drawer, {{
+              placeholder: 'Filter by project, section, or claim text…',
+            }});
+          }}
         }});
       }})();
     </script>
@@ -6051,8 +6267,13 @@ window.showProjectDetail = function(pid, targetId) {{
     return a.localeCompare(b);
   }}
 
-  // Sortable headers
-  document.querySelectorAll('table.sortable').forEach(table => {{
+  // v0.3.6: hoisted to window.wireSortableTable / wireFilterableTable so
+  // dynamically-injected tables (e.g., discoveries drawer) can opt in too.
+  // Idempotent: a "data-wired" attribute prevents double-wiring on repeat
+  // calls (drawer re-renders inject a fresh table each click).
+  function wireSortableTable(table) {{
+    if (table.getAttribute('data-sort-wired') === '1') return;
+    table.setAttribute('data-sort-wired', '1');
     table.querySelectorAll('th').forEach((th, idx) => {{
       th.style.cursor = 'pointer';
       th.title = 'Click to sort';
@@ -6073,23 +6294,24 @@ window.showProjectDetail = function(pid, targetId) {{
         rows.forEach(r => tbody.appendChild(r));
       }});
     }});
-  }});
+  }}
 
-  // Filter inputs
-  document.querySelectorAll('table.filterable').forEach(table => {{
+  function wireFilterableTable(table, opts) {{
+    if (table.getAttribute('data-filter-wired') === '1') return;
+    table.setAttribute('data-filter-wired', '1');
     const tbody = table.querySelector('tbody');
     if (!tbody) return;
     const allRows = Array.from(tbody.querySelectorAll('tr'));
-    if (allRows.length < 2) return;  // not worth filtering tiny tables
+    if (allRows.length < 2) return;
+    const placeholder = (opts && opts.placeholder) || 'Filter rows…';
 
-    // Build the input + counter, prepend BEFORE the table.
     const wrapper = document.createElement('div');
     wrapper.className = 'table-filter';
     wrapper.style.cssText = 'margin: 0.4em 0; display: flex; gap: 0.6em; align-items: center; font-size: 0.9em;';
     const input = document.createElement('input');
     input.type = 'search';
-    input.placeholder = 'Filter rows…';
-    input.style.cssText = 'padding: 0.3em 0.5em; border: 1px solid #ccc; border-radius: 4px; flex: 0 0 240px; font-size: 0.95em;';
+    input.placeholder = placeholder;
+    input.style.cssText = 'padding: 0.3em 0.5em; border: 1px solid #ccc; border-radius: 4px; flex: 0 0 280px; font-size: 0.95em;';
     const counter = document.createElement('span');
     counter.style.cssText = 'color: #666; font-style: italic;';
     counter.textContent = `${{allRows.length}} rows`;
@@ -6111,7 +6333,20 @@ window.showProjectDetail = function(pid, targetId) {{
         : `${{allRows.length}} rows`;
     }}
     input.addEventListener('input', applyFilter);
-  }});
+  }}
+
+  function wireTablesIn(rootEl, opts) {{
+    rootEl.querySelectorAll('table.sortable').forEach(t => wireSortableTable(t));
+    rootEl.querySelectorAll('table.filterable').forEach(t => wireFilterableTable(t, opts));
+  }}
+
+  // Expose so dynamic content can re-trigger wiring.
+  window.wireSortableTable = wireSortableTable;
+  window.wireFilterableTable = wireFilterableTable;
+  window.wireTablesIn = wireTablesIn;
+
+  // Initial pass over static tables.
+  wireTablesIn(document, {{}});
 }})();
 
 // --- Panel collapse toggle ---

@@ -221,3 +221,226 @@ def test_populate_projects_round_trips_against_current_schema(tmp_path):
     assert all(v is None for v in derived), \
         "derived columns must be NULL after populate (enrich fills them)"
     db.close()
+
+
+# --------------------------------------------------------------------------
+# v0.3.5 regression: positive_result panel must mirror negative_result panel
+# --------------------------------------------------------------------------
+#
+# v0.3.2 shipped a minimal positive-result render (single chart, no toggle).
+# v0.3.5 expanded it to the full Monthly/Per-project toggle + click-to-drill
+# drawer. This test asserts the structural symmetry against the negative
+# panel — if either panel grows new toggle/drawer hooks, both must.
+
+def test_positive_result_panel_mirrors_negative_structurally():
+    from beril_atlas.engine.render import (
+        render_positive_result_rate_panel,
+        render_negative_result_rate_panel,
+    )
+    bundle = {
+        "by_month": [
+            {"month": "2026-01", "positive": 1, "total": 5, "negative": 1, "rate": 0.2},
+            {"month": "2026-02", "positive": 3, "total": 6, "negative": 1, "rate": 0.5},
+        ],
+        "by_project": [
+            {"project_id": "px", "positive": 4, "total": 5, "negative": 1, "rate": 0.8},
+            {"project_id": "py", "positive": 2, "total": 5, "negative": 1, "rate": 0.4},
+        ],
+        "samples": {
+            "px": [{"text": "x mech claim", "source_section": "Findings",
+                    "source_quote": "q", "claim_type": "mechanistic"}],
+            "py": [{"text": "y pred claim", "source_section": "Findings",
+                    "source_quote": "q", "claim_type": "predictive"}],
+        },
+    }
+    pos = render_positive_result_rate_panel(bundle)
+    neg = render_negative_result_rate_panel(bundle)
+
+    # Both panels must have the structural primitives.
+    for label, html in [("positive", pos), ("negative", neg)]:
+        assert "renderMonthView" in html, f"{label}: missing month-view function"
+        assert "renderProjectView" in html, f"{label}: missing project-view function"
+        assert "updatemenus" in html, f"{label}: missing toggle menu"
+        assert "plotly_buttonclicked" in html, f"{label}: missing toggle wiring"
+        assert "showSamples" in html, f"{label}: missing drawer function"
+        assert "detail-panel" in html, f"{label}: missing drawer container"
+
+    # Positive-specific: claim_type tag rendering for mechanistic vs predictive.
+    assert "tagFor(" in pos, "positive panel: missing claim_type tag helper"
+    assert "mechanistic" in pos and "predictive" in pos, \
+        "positive panel: claim_type tag helper must distinguish mech/pred"
+    # Color symmetry: positive uses green family (#047857), negative orange (#b45309)
+    assert "#047857" in pos
+    assert "#b45309" in neg
+
+
+def test_v036_discoveries_drawer_per_project_cap():
+    """v0.3.6 regression: per-bucket sampling must represent every contributing
+    project, not concentrate in the alphabetically-first one.
+
+    Pre-fix: ORDER BY (project_id, mention_id) + LIMIT rn<=20 meant the
+    alphabetically-first project with ≥20 claims filled the entire bucket.
+    Caught 2026-04-27 on Adam's hub: April buckets showed only
+    enigma_sso_asv_ecology even though 5 April projects contributed.
+
+    Fix: per_project_cap (default 20) replaces overall limit_per_cell. The
+    drawer renders as a sortable+filterable table — user filters to focus on
+    one project rather than the SQL pre-deciding which 4 of each are 'best'.
+    """
+    from beril_atlas.engine.render import fetch_claims_by_month_and_type
+    from beril_atlas.engine.warehouse import create_schema, populate_projects, enrich_projects
+    from beril_atlas.engine import projects as p_mod
+    import tempfile, json, datetime as _dt
+    from pathlib import Path
+
+    td = Path(tempfile.mkdtemp())
+    db = duckdb.connect(str(td / "atlas.duckdb"))
+    create_schema(db)
+    now = _dt.datetime.utcnow()
+    today = _dt.date.today()
+
+    # 5 projects all completing in the same April month, each with 30
+    # descriptive claims (more than the per_project_cap so cap is exercised).
+    projs = [p_mod.Project(
+        project_id=pid, root_path=td/pid, name=pid,
+        last_touched=now.timestamp(), is_git_repo=False,
+        total_bytes=1000, file_count=5, has_notebooks=False, notebook_count=0,
+        has_data_dir=False, has_figures_dir=False, has_references_md=True,
+        canonical_docs_present={"README":True}, file_type_counts={"md":3},
+    ) for pid in ("aaa_first", "bbb_second", "ccc_third", "ddd_fourth", "eee_fifth")]
+    populate_projects(db, projs, now)
+    for pid in ("aaa_first", "bbb_second", "ccc_third", "ddd_fourth", "eee_fifth"):
+        db.executemany(
+            "INSERT INTO project_revisions VALUES (?,?,?,?,?,?,?,?,?)",
+            [(f"{pid}:R:v1#x", pid, "RESEARCH_PLAN", "v1",
+              today - dt.timedelta(days=10), "day", "plan", "v1", now)])
+    enrich_projects(db)
+
+    seed = []
+    for pid in ("aaa_first", "bbb_second", "ccc_third", "ddd_fourth", "eee_fifth"):
+        for i in range(30):
+            seed.append((f"{pid}-em-{i}", pid, f"{pid}:R:F:{i}", "README", "Findings",
+                         "conclusion", f"claim:c{i}", f"{pid} claim {i}", f"q{i}", 0.7,
+                         "llm", "x", "v1", "test",
+                         json.dumps({"claim_type": "descriptive"}), now))
+    db.executemany(
+        "INSERT INTO entity_mentions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", seed)
+
+    bucket = fetch_claims_by_month_and_type(db, per_project_cap=20)
+    db.close()
+
+    month_label = today.strftime("%Y-%m")
+    samples = bucket.get(f"{month_label}|descriptive", [])
+    pids_in_bucket = {s["project_id"] for s in samples}
+    # Every project must be represented — that's the property the user cares about.
+    assert pids_in_bucket == {"aaa_first", "bbb_second", "ccc_third", "ddd_fourth", "eee_fifth"}, \
+        f"expected all 5 projects represented, got {sorted(pids_in_bucket)}"
+    # Each project capped at exactly 20 (each has 30 input claims).
+    from collections import Counter
+    counts = Counter(s["project_id"] for s in samples)
+    for pid, n in counts.items():
+        assert n == 20, f"{pid}: expected 20 samples (per_project_cap), got {n}"
+    # Total = 5 projects × 20 cap = 100
+    assert len(samples) == 100, f"expected 5×20=100 samples total, got {len(samples)}"
+
+
+def test_v036_discoveries_drawer_renders_sortable_filterable_table():
+    """v0.3.6: drawer JS must inject <table class='sortable filterable'> and
+    call window.wireTablesIn after click. Source-text grep is enough — the
+    runtime behavior is exercised by the round-trip browser; here we just
+    guard against future refactors deleting the table primitive."""
+    from beril_atlas.engine.render import render_discoveries_timeline
+    rows = [{"claim_type": "descriptive", "month": "2026-04", "cumulative": 10}]
+    html = render_discoveries_timeline(rows, claims_by_bucket={
+        "2026-04|descriptive": [
+            {"project_id": "px", "source_doc": "README",
+             "source_section": "Findings", "claim_text": "x finding",
+             "source_quote": "evidence x"},
+        ],
+    })
+    assert 'class="sortable filterable"' in html, \
+        "drawer must use sortable+filterable table primitive"
+    assert "window.wireTablesIn" in html, \
+        "drawer must call wireTablesIn after injection"
+    # Column headers
+    for col in ("Project", "Source", "Claim", "Verbatim quote"):
+        assert f">{col}<" in html, f"missing column header: {col}"
+
+
+def test_v036_monthly_tick_labels_on_all_trend_charts():
+    """v0.3.6 regression: every cumulative-trend chart x-axis must use
+    tickmode:'array' with explicitly-computed monthly labels.
+
+    Pre-fix: bare xaxis:{title:'...'} with Plotly's auto-tick. With a 3-month
+    range, Plotly chose weekly ticks (Feb 1 ... Mar 29) and never labeled
+    Apr 2026 even though April datapoints existed — the eye read it as
+    "no data after April 1." Adam reported on 2026-04-27 against v0.3.5.
+    """
+    from beril_atlas.engine import render as render_mod
+
+    # Topic-trends panel (organism/method/database/function trends use this)
+    trends = [{
+        "canonical": "test_organism",
+        "series": [
+            {"month": "2026-02", "cumulative": 5},
+            {"month": "2026-03", "cumulative": 12},
+            {"month": "2026-04", "cumulative": 18},
+        ],
+    }]
+    html = render_mod.render_topic_trends_panel(
+        trends, "Test trends", "organism",
+        "panel-trends-test", "test_csv")
+    assert "tickmode:'array'" in html, "topic-trends: missing monthly ticks"
+    # The JS computes labels at runtime; the source must contain the computation.
+    assert "monthsSet" in html and "tickText" in html, \
+        "topic-trends: missing month-set + ticktext computation"
+
+    # Negative-result panel
+    bundle = {
+        "by_month": [{"month": "2026-02", "negative": 2, "total": 10, "rate": 0.2},
+                      {"month": "2026-04", "negative": 5, "total": 20, "rate": 0.25}],
+        "by_project": [], "samples": {},
+    }
+    neg = render_mod.render_negative_result_rate_panel(bundle)
+    assert "tickmode:'array'" in neg
+    assert "monthsN" in neg and "tickTextN" in neg
+
+    # Positive-result panel
+    pos_bundle = {
+        "by_month": [{"month": "2026-02", "positive": 3, "total": 10, "rate": 0.3},
+                      {"month": "2026-04", "positive": 8, "total": 20, "rate": 0.4}],
+        "by_project": [], "samples": {},
+    }
+    pos = render_mod.render_positive_result_rate_panel(pos_bundle)
+    assert "tickmode:'array'" in pos
+    assert "monthsP" in pos and "tickTextP" in pos
+
+
+def test_positive_panel_renders_clean_against_full_bundle():
+    """Smoke: render_positive_result_rate_panel must accept a full bundle
+    (by_month + by_project + samples) and produce HTML referencing all three."""
+    from beril_atlas.engine.render import render_positive_result_rate_panel
+    bundle = {
+        "by_month": [{"month": "2026-04", "positive": 4, "total": 6, "rate": 0.6667}],
+        "by_project": [
+            # Below the ≥5-conclusions threshold — should be filtered out
+            {"project_id": "tiny", "positive": 1, "total": 2, "rate": 0.5},
+            # Above threshold — should appear
+            {"project_id": "real", "positive": 4, "total": 6, "rate": 0.6667},
+        ],
+        "samples": {
+            "real": [
+                {"text": "real mech", "source_section": "Findings",
+                 "source_quote": "q", "claim_type": "mechanistic"},
+                {"text": "real pred", "source_section": "Findings",
+                 "source_quote": "q", "claim_type": "predictive"},
+            ],
+        },
+    }
+    html = render_positive_result_rate_panel(bundle)
+    assert "panel-positive-result-rate" in html
+    assert '"real"' in html, "high-N project must survive ≥5 filter"
+    assert '"tiny"' not in html, "low-N project must be filtered out"
+    # Samples payload reaches the JS data block
+    assert "real mech" in html
+    assert "real pred" in html
