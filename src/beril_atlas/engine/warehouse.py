@@ -403,6 +403,31 @@ def create_schema(con: duckdb.DuckDBPyConnection) -> None:
             # exists (detected by attempting the select).
             pass
 
+    # Backfill effective_completion_date on warehouse open so that
+    # metrics + render against a warehouse from a pre-v0.3.2 scan still
+    # have populated trend axes. Idempotent: WHERE effective_completion_date
+    # IS NULL means once populated, the row is skipped on subsequent opens.
+    # If the project has no revisions at all (project_revisions has no
+    # rows for it), effective_completion_date stays NULL — there's nothing
+    # to compute from.
+    try:
+        con.execute("""
+            UPDATE projects p
+            SET effective_completion_date = t.max_date
+            FROM (
+                SELECT project_id, MAX(version_date) AS max_date
+                FROM project_revisions
+                GROUP BY project_id
+            ) t
+            WHERE p.project_id = t.project_id
+              AND p.effective_completion_date IS NULL
+        """)
+    except duckdb.Error:
+        # project_revisions may not exist yet on a brand-new warehouse
+        # (create_schema runs before any populator). That's fine — there's
+        # nothing to backfill. The next enrich_projects call will populate.
+        pass
+
 
 def _ts(epoch: float) -> dt.datetime:
     """Convert epoch seconds to datetime (timezone-naive UTC)."""

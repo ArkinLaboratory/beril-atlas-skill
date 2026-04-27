@@ -528,14 +528,14 @@ def fetch_discoveries_timeline(con):
     completion_date which hid April work."""
     rows = con.execute("""
         WITH dated_conclusions AS (
-          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
+          SELECT strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m') AS month,
                  COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
                           'unclassified') AS claim_type,
                  em.mention_id
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.effective_completion_date IS NOT NULL
+            AND COALESCE(p.effective_completion_date, p.completion_date) IS NOT NULL
         ),
         per_month AS (
           SELECT month, claim_type, COUNT(*) AS n
@@ -567,14 +567,14 @@ def fetch_topic_trends(con, kind: str, top_k: int = 10):
         ),
         per_month AS (
           SELECT em.canonical_id,
-                 strftime(p.effective_completion_date, '%Y-%m') AS month,
+                 strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m') AS month,
                  COUNT(*) AS n
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = ?
             AND em.canonical_id NOT LIKE 'proposed:%'
             AND em.canonical_id IN (SELECT canonical_id FROM ranked)
-            AND p.effective_completion_date IS NOT NULL
+            AND COALESCE(p.effective_completion_date, p.completion_date) IS NOT NULL
           GROUP BY em.canonical_id, month
         )
         SELECT canonical_id, month,
@@ -603,7 +603,7 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
     # v0.3.2: effective_completion_date so April work surfaces.
     rows = con.execute(f"""
         WITH dated AS (
-          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
+          SELECT strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m') AS month,
                  COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
                           'unclassified') AS claim_type,
                  em.project_id,
@@ -612,7 +612,7 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
                  em.surface_form AS claim_text,
                  em.source_quote,
                  ROW_NUMBER() OVER (
-                   PARTITION BY strftime(p.effective_completion_date, '%Y-%m'),
+                   PARTITION BY strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m'),
                                 COALESCE(json_extract_string(em.extra_json, '$.claim_type'),
                                          'unclassified')
                    ORDER BY em.project_id, em.mention_id
@@ -620,7 +620,7 @@ def fetch_claims_by_month_and_type(con, limit_per_cell=20):
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.effective_completion_date IS NOT NULL
+            AND COALESCE(p.effective_completion_date, p.completion_date) IS NOT NULL
         )
         SELECT month, claim_type, project_id, source_doc, source_section,
                claim_text, source_quote
@@ -1721,12 +1721,12 @@ def fetch_negative_result_rate(con):
     # v0.3.2: effective_completion_date so April work surfaces.
     for month, negative, total in con.execute("""
         WITH dated AS (
-          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
+          SELECT strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m') AS month,
                  json_extract_string(em.extra_json, '$.claim_type') AS ct
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.effective_completion_date IS NOT NULL
+            AND COALESCE(p.effective_completion_date, p.completion_date) IS NOT NULL
         )
         SELECT month,
                COUNT(*) FILTER (WHERE ct = 'negative_result') AS negative,
@@ -1788,12 +1788,12 @@ def fetch_positive_result_rate(con):
     by_month = []
     for month, positive, total in con.execute(f"""
         WITH dated AS (
-          SELECT strftime(p.effective_completion_date, '%Y-%m') AS month,
+          SELECT strftime(COALESCE(p.effective_completion_date, p.completion_date), '%Y-%m') AS month,
                  json_extract_string(em.extra_json, '$.claim_type') AS ct
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.effective_completion_date IS NOT NULL
+            AND COALESCE(p.effective_completion_date, p.completion_date) IS NOT NULL
         )
         SELECT month,
                COUNT(*) FILTER (WHERE ct IN {POSITIVE_TYPES}) AS positive,
@@ -1926,8 +1926,8 @@ def fetch_weekly_activity_pulse(con):
           SELECT DISTINCT date_trunc('week', version_date) AS wk
           FROM project_revisions WHERE version_date IS NOT NULL
           UNION
-          SELECT DISTINCT date_trunc('week', effective_completion_date)
-          FROM projects WHERE effective_completion_date IS NOT NULL
+          SELECT DISTINCT date_trunc('week', COALESCE(effective_completion_date, completion_date))
+          FROM projects WHERE COALESCE(effective_completion_date, completion_date) IS NOT NULL
         ),
         starts AS (
           SELECT date_trunc('week', start_date) AS wk, COUNT(*) AS n
@@ -1938,11 +1938,11 @@ def fetch_weekly_activity_pulse(con):
           FROM project_revisions WHERE version_date IS NOT NULL GROUP BY 1
         ),
         concls AS (
-          SELECT date_trunc('week', p.effective_completion_date) AS wk, COUNT(*) AS n
+          SELECT date_trunc('week', COALESCE(p.effective_completion_date, p.completion_date)) AS wk, COUNT(*) AS n
           FROM entity_mentions em
           JOIN projects p USING(project_id)
           WHERE em.entity_kind = 'conclusion'
-            AND p.effective_completion_date IS NOT NULL
+            AND COALESCE(p.effective_completion_date, p.completion_date) IS NOT NULL
           GROUP BY 1
         )
         SELECT w.wk, COALESCE(s.n,0), COALESCE(r.n,0), COALESCE(c.n,0)
