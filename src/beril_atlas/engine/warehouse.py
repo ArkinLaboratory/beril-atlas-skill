@@ -480,14 +480,24 @@ def populate_projects(con: duckdb.DuckDBPyConnection,
                        project_recs: list[p_mod.Project],
                        observed_at: dt.datetime) -> None:
     """Insert project inventory rows idempotently (DELETE + INSERT).
-    Does not populate derived fields (start_date, revision_depth, etc.) —
-    those come from enrich_projects().
+    Does not populate derived fields (start_date, revision_depth,
+    completion_date, effective_completion_date, etc.) — those come from
+    enrich_projects().
 
     Idempotency pattern: every populator in this module does DELETE then
     INSERT so re-running the scan against an existing warehouse just works
     (no PK conflicts). Semantics: warehouse reflects the CURRENT scan's
     state, not a superset of past scans. Projects deleted from the corpus
-    between scans are correctly removed."""
+    between scans are correctly removed.
+
+    v0.3.4: switched from positional VALUES placeholders to a NAMED
+    column list. The v0.3.2 release added effective_completion_date to
+    the projects schema but didn't update the INSERT VALUES count, which
+    caused populate_projects to raise a column-count mismatch on every
+    scan. The DELETE happened, the INSERT failed, and the warehouse was
+    left with an empty projects table. Naming the columns explicitly
+    means future schema additions don't require touching this function.
+    """
     import json
     con.execute("DELETE FROM projects")
     rows = []
@@ -508,12 +518,20 @@ def populate_projects(con: duckdb.DuckDBPyConnection,
             pr.has_references_md,
             json.dumps(pr.canonical_docs_present),
             json.dumps(pr.file_type_counts),
-            None, None, None, None, None,  # derived fields filled later
             observed_at,
         ))
     if rows:
+        # Named columns — derived fields (start_date, completion_date,
+        # effective_completion_date, revision_depth, review_date,
+        # review_reviewer) get NULL by default; enrich_projects fills them.
         con.executemany(
-            """INSERT INTO projects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO projects
+                 (project_id, root_path, name, last_touched, is_git_repo,
+                  repo_role, total_bytes, file_count, has_notebooks,
+                  notebook_count, has_data_dir, has_figures_dir,
+                  has_references_md, canonical_docs_present,
+                  file_type_counts, observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             rows)
 
 

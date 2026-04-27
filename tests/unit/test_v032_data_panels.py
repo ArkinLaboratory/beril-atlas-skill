@@ -165,3 +165,59 @@ def test_render_smoke_with_v032_panels(tmp_path):
     assert "panel-positive-result-rate" in text or \
         "Positive-result reporting" in text
     assert "panel-whats-stuck" in text or "What's stuck" in text
+
+
+# --------------------------------------------------------------------------
+# v0.3.4 regression: populate_projects must round-trip against current schema
+# --------------------------------------------------------------------------
+#
+# v0.3.2 added effective_completion_date to the projects schema but didn't
+# update populate_projects's INSERT VALUES count. Result: every scan failed
+# at populate_projects with a column-count mismatch, after the DELETE had
+# wiped the table. Warehouses ended up with empty projects tables.
+# v0.3.4 named the INSERT columns explicitly. This test exercises the
+# round-trip so future column additions to the projects table don't
+# silently break populate_projects.
+
+def test_populate_projects_round_trips_against_current_schema(tmp_path):
+    from beril_atlas.engine import projects as p_mod
+    from beril_atlas.engine.warehouse import create_schema, populate_projects
+    db = duckdb.connect(str(tmp_path / "atlas.duckdb"))
+    create_schema(db)
+    now = dt.datetime.utcnow()
+
+    # Construct one Project record. The Project dataclass shape mirrors what
+    # scan.py builds; the test depends on populate_projects accepting it.
+    pr = p_mod.Project(
+        project_id="p_round_trip",
+        root_path=tmp_path / "p_round_trip",
+        name="round trip test",
+        last_touched=now.timestamp(),
+        is_git_repo=False,
+        total_bytes=1234,
+        file_count=5,
+        has_notebooks=False,
+        notebook_count=0,
+        has_data_dir=False,
+        has_figures_dir=False,
+        has_references_md=True,
+        canonical_docs_present={"README": True},
+        file_type_counts={"md": 3},
+    )
+    populate_projects(db, [pr], now)
+
+    # If the INSERT had a column-count mismatch, this would raise — and
+    # the populated row would never appear.
+    n = db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+    assert n == 1, "populate_projects must succeed against current schema"
+    row = db.execute(
+        "SELECT project_id, name, total_bytes FROM projects"
+    ).fetchone()
+    assert row == ("p_round_trip", "round trip test", 1234)
+    # Derived columns are NULL until enrich_projects runs.
+    derived = db.execute(
+        "SELECT start_date, completion_date, effective_completion_date FROM projects"
+    ).fetchone()
+    assert all(v is None for v in derived), \
+        "derived columns must be NULL after populate (enrich fills them)"
+    db.close()
