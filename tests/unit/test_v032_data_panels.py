@@ -365,6 +365,16 @@ def test_v036_discoveries_drawer_renders_sortable_filterable_table():
     # Column headers
     for col in ("Project", "Source", "Claim", "Verbatim quote"):
         assert f">{col}<" in html, f"missing column header: {col}"
+    # v0.3.7: column-width constraints prevent the verbatim-quote column from
+    # overflowing the panel right edge. Caught 2026-04-27 on Adam's hub:
+    # without table-layout:fixed + colgroup widths, the longest cell
+    # determined column widths and the quote spilled off-screen.
+    assert "table-layout:fixed" in html, \
+        "drawer table needs table-layout:fixed to honor column widths"
+    assert "<colgroup>" in html, \
+        "drawer table needs colgroup with explicit per-column widths"
+    assert "word-wrap:break-word" in html or "overflow-wrap:break-word" in html, \
+        "drawer cells need word-wrap so long quotes wrap inside their column"
 
 
 def test_v036_monthly_tick_labels_on_all_trend_charts():

@@ -4907,12 +4907,17 @@ def render_discoveries_timeline(rows, claims_by_bucket=None):
             return;
           }}
           const projectSet = new Set(samples.map(s => s.project_id));
+          // v0.3.7: table-layout:fixed + per-column width percentages so the
+          // verbatim-quote column doesn't overflow the panel. word-wrap on
+          // long-text cells (project_id, claim, quote) so wrapping happens
+          // mid-word for ultra-long tokens. Source column has nowrap removed
+          // so REPORT §Future-Directions wraps at the space if needed.
           const rowsHtml = samples.map(s => `
             <tr>
-              <td style="vertical-align:top; white-space:nowrap;"><code>${{escHtml(s.project_id)}}</code></td>
-              <td style="vertical-align:top; white-space:nowrap; font-size:0.85rem; color:#475569;">${{escHtml(s.source_doc)}} §${{escHtml(s.source_section)}}</td>
-              <td style="vertical-align:top; font-size:0.9rem;">${{escHtml(s.claim_text) || '<em>(no claim text)</em>'}}</td>
-              <td style="vertical-align:top; font-size:0.85rem; color:#374151; font-style:italic;">${{s.source_quote ? '"' + escHtml(s.source_quote) + '"' : ''}}</td>
+              <td style="vertical-align:top; word-wrap:break-word; overflow-wrap:break-word;"><code>${{escHtml(s.project_id)}}</code></td>
+              <td style="vertical-align:top; font-size:0.85rem; color:#475569; word-wrap:break-word;">${{escHtml(s.source_doc)}} §${{escHtml(s.source_section)}}</td>
+              <td style="vertical-align:top; font-size:0.9rem; word-wrap:break-word; overflow-wrap:break-word;">${{escHtml(s.claim_text) || '<em>(no claim text)</em>'}}</td>
+              <td style="vertical-align:top; font-size:0.85rem; color:#374151; font-style:italic; word-wrap:break-word; overflow-wrap:break-word;">${{s.source_quote ? '"' + escHtml(s.source_quote) + '"' : ''}}</td>
             </tr>
           `).join('');
           drawer.innerHTML = `
@@ -4922,7 +4927,13 @@ def render_discoveries_timeline(rows, claims_by_bucket=None):
                 (${{samples.length}} claim${{samples.length===1?'':'s'}} from ${{projectSet.size}} project${{projectSet.size===1?'':'s'}}; capped at 20 per project)
               </span>
             </h4>
-            <table class="sortable filterable" style="width:100%; border-collapse:collapse;">
+            <table class="sortable filterable" style="width:100%; table-layout:fixed; border-collapse:collapse;">
+              <colgroup>
+                <col style="width:14%;">
+                <col style="width:16%;">
+                <col style="width:38%;">
+                <col style="width:32%;">
+              </colgroup>
               <thead>
                 <tr style="background:#f1f5f9; text-align:left; border-bottom:2px solid #cbd5e1;">
                   <th style="padding:0.4rem 0.5rem;">Project</th>
