@@ -1,46 +1,53 @@
 # beril-atlas-skill — package layout + CLI structure
 
-**Date:** 2026-04-24
-**Status:** DRAFT — Task #3 deliverable. Awaits Adam review before any code moves.
+**Originally drafted:** 2026-04-24 (Task #3, pre-build).
+**Last updated:** 2026-04-26 to reflect v0.1.6 sibling-skills refactor and v0.1.7–v0.1.12 fixes.
+**Status:** describes current shipped state through v0.1.12.
 
-This document specifies the target shape of the `ArkinLaboratory/beril-atlas-skill`
-repo. Source of truth for the migration from `spike/beril-extended/scripts/`
-to the new pip-installable package.
+This document is the ground-truth layout reference for
+`ArkinLaboratory/beril-atlas-skill`. Differs from the original 2026-04-24
+draft in two material ways:
 
-## Repository tree
+- v0.1.6: shipped skills moved from a single `src/beril_atlas/skill/` folder
+  to a `src/beril_atlas/skills/` (plural) tree containing one folder per
+  Claude Code skill (umbrella + slash-command siblings).
+- v0.1.10/v0.1.11: render output gained sortable+filterable tables,
+  per-panel "Generated at" timestamps, and a stable revision_id format
+  (no byte offset).
+
+## Repository tree (current)
 
 ```
 ArkinLaboratory/beril-atlas-skill/
-├── pyproject.toml                 # drafted in Task #2
+├── pyproject.toml
 ├── README.md
 ├── LICENSE
 ├── .gitignore
 ├── .gitattributes                 # line-ending hygiene (Windows friends)
 ├── src/
 │   └── beril_atlas/
-│       ├── __init__.py
+│       ├── __init__.py             # exports __version__
 │       ├── cli.py                  # argparse entry point, subcommand dispatch
 │       ├── discovery.py            # BERIL_ROOT + skill-dir resolution
-│       ├── config.py               # ~/.beril-atlas/config.yaml loader
 │       ├── commands/
 │       │   ├── __init__.py
-│       │   ├── install_skill.py
-│       │   ├── configure.py
-│       │   ├── scan.py             # thin wrapper over engine.scan
-│       │   ├── metrics.py
-│       │   ├── render.py
-│       │   └── fixture_regen.py    # maintainer-only
+│       │   ├── install_skill.py    # walks skills/*/ + copies to .claude/skills/<name>/
+│       │   ├── configure.py        # CLI fallback for /beril-atlas-configure
+│       │   ├── config_status.py    # state machine inspector
+│       │   ├── smoke_test.py       # advisory LLM ping
+│       │   ├── template_env.py     # writes .env template
+│       │   └── mark_configured.py  # state-machine transition helper
 │       ├── engine/                 # was scripts/atlas_lib/
 │       │   ├── __init__.py
-│       │   ├── authors.py
-│       │   ├── contamination.py
+│       │   ├── authors.py          # em-dash separator parser (v0.1.8)
+│       │   ├── contamination.py    # path-membership self-test (v0.1.9)
 │       │   ├── drift.py
-│       │   ├── extraction_cache.py
+│       │   ├── extraction_cache.py # finish_reason='length' bypass (v0.1.8)
 │       │   ├── extractors/
-│       │   │   ├── __init__.py
-│       │   │   └── universal.py    # organisms.py deleted
-│       │   ├── llm_client.py
-│       │   ├── llm_config.py
+│       │   │   ├── __init__.py     # length-aware retry (v0.1.10)
+│       │   │   └── universal.py    # null-source_quote fix (v0.1.7)
+│       │   ├── llm_client.py       # extract_json + json5 fallback (v0.1.9)
+│       │   ├── llm_config.py       # default_max_tokens=32000 (v0.1.11)
 │       │   ├── metrics.py
 │       │   ├── notebooks.py
 │       │   ├── posthoc_classifiers.py
@@ -48,49 +55,75 @@ ArkinLaboratory/beril-atlas-skill/
 │       │   ├── references.py
 │       │   ├── research_lines.py
 │       │   ├── revisions.py
-│       │   ├── scan.py             # was scripts/atlas_scan.py (refactored)
+│       │   ├── scan.py             # was scripts/atlas_scan.py
 │       │   ├── sections.py
 │       │   ├── sophistication.py
 │       │   ├── vocab.py
-│       │   └── warehouse.py        # was scripts/atlas_warehouse.py
-│       ├── render.py               # was scripts/atlas_render.py (direct migration, NO split in v0.1)
-│       └── skill/                  # ships as package_data — installed to .claude/skills/beril-atlas/
-│           ├── SKILL.md
-│           ├── commands/
-│           │   └── beril-atlas-configure.md
-│           ├── prompts/
-│           │   └── extract_universal.v1.md
-│           ├── vocab-shipped/      # was vocab/, renamed
-│           │   ├── _match_rules.v1.yaml
-│           │   ├── databases.v1.yaml
-│           │   ├── functions.v1.yaml
-│           │   ├── journals.v1.yaml
-│           │   ├── methods.v1.yaml
-│           │   ├── organisms.v1.yaml
-│           │   └── question-types.v1.yaml
-│           └── references/
-│               ├── design-note.md              # scrubbed (section H fix)
-│               ├── dashboard-caveats.md        # scrubbed (A2 rewrite)
-│               ├── drift-review-template.md
-│               ├── phase-0-findings.md
-│               ├── sophistication-score-proposal.md  # scrubbed
-│               ├── sync-protocol.md
-│               ├── vocab-reference.md
-│               ├── what-we-capture.md
-│               ├── dashboard-mockup.html
-│               └── sample-output/              # synthetic fixture
-│                   └── ...
+│       │   ├── warehouse.py        # content-keyed revision_id (v0.1.8); name-author merge (v0.1.10)
+│       │   └── render.py           # sortable+filterable + Gantt sub-rows + timestamps (v0.1.10–v0.1.12)
+│       └── skills/                 # plural — ships as package_data, walked by install_skill
+│           ├── beril-atlas/                   # umbrella skill (orientation + engine self-state)
+│           │   ├── SKILL.md
+│           │   ├── prompts/
+│           │   │   └── extract_universal.v1.md   # universal.v3 (v0.1.9)
+│           │   ├── vocab-shipped/
+│           │   │   ├── _match_rules.v1.yaml
+│           │   │   ├── databases.v1.yaml
+│           │   │   ├── functions.v1.yaml
+│           │   │   ├── journals.v1.yaml
+│           │   │   ├── methods.v1.yaml
+│           │   │   ├── organisms.v1.yaml
+│           │   │   └── question-types.v1.yaml
+│           │   └── references/
+│           │       ├── design-note.md
+│           │       ├── dashboard-caveats.md
+│           │       ├── drift-review-template.md
+│           │       ├── phase-0-findings.md
+│           │       ├── sophistication-score-proposal.md
+│           │       ├── sync-protocol.md
+│           │       ├── vocab-reference.md
+│           │       ├── what-we-capture.md
+│           │       └── dashboard-mockup.html
+│           ├── beril-atlas-configure/SKILL.md  # /beril-atlas-configure slash command
+│           └── beril-atlas-update/SKILL.md     # /beril-atlas-update slash command (v0.1.5)
 └── tests/
-    ├── unit/                       # NEW — synthetic fixtures, portable
-    │   ├── test_vocab.py
-    │   ├── test_sections.py
-    │   ├── test_sophistication_synthetic.py
-    │   └── ...
-    └── integration/                # was tests/atlas/, marked @pytest.mark.integration
+    ├── unit/                       # 96 tests as of v0.1.12
+    │   ├── test_discovery.py
+    │   ├── test_config_status.py
+    │   ├── test_smoke_test.py
+    │   ├── test_extractor_null_handling.py    # v0.1.7 regressions
+    │   ├── test_v018_fixes.py                 # v0.1.8 regressions
+    │   ├── test_v019_fixes.py                 # v0.1.9 regressions
+    │   ├── test_v0110_fixes.py                # v0.1.10 regressions
+    │   ├── test_v0111_fixes.py                # v0.1.11 regressions
+    │   └── test_v0112_fixes.py                # v0.1.12 regressions
+    └── integration/                # marked @pytest.mark.integration
+        ├── conftest.py             # auto-marks tests in this dir
+        ├── test_authors.py
+        ├── test_contamination.py
+        ├── test_drift.py
+        ├── test_end_to_end.py
+        ├── test_extractors.py
+        ├── test_llm.py
         ├── test_metrics.py
+        ├── test_notebooks.py
+        ├── test_posthoc_classifiers.py
+        ├── test_projects.py
+        ├── test_references.py
+        ├── test_research_lines.py
+        ├── test_revisions.py
+        ├── test_sections.py
         ├── test_sophistication.py
-        └── ...
+        ├── test_vocab.py
+        └── test_warehouse_idempotency.py
 ```
+
+The v0.1.6 sibling-skills design — one `SKILL.md` per skill folder, no
+nested `commands/` directories — was determined by Claude Code's actual
+skill-discovery convention; pre-v0.1.6 we placed slash-command markdown
+under `skill/commands/` and Claude Code didn't register them. See the
+v0.1.6 commit message and the umbrella `SKILL.md`'s "Sibling slash-command
+skills" section for the design rationale.
 
 ## Module rename map
 

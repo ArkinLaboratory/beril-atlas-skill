@@ -5319,13 +5319,13 @@ window.showProjectDetail = function(pid, targetId) {{
 //   class is "sortable"             -> sort only
 //   class is "filterable"           -> filter only
 //
-// Date-column detection: a cell value matching /^\d{{4}}-\d{{2}}-\d{{2}}$/ is
+// Date-column detection: a cell value matching /^\\d{{4}}-\\d{{2}}-\\d{{2}}$/ is
 // treated as ISO date and sorted by Date.parse for ascending chronology.
 // Numeric detection: parseFloat(value.replace(/,/g, '')) succeeds → numeric.
 // Otherwise: locale-aware string compare.
 
 (function() {{
-  const ISO_DATE_RE = /^\d{{4}}-\d{{2}}-\d{{2}}$/;
+  const ISO_DATE_RE = /^\\d{{4}}-\\d{{2}}-\\d{{2}}$/;
 
   function cellValue(tr, idx) {{
     const c = tr.children[idx];

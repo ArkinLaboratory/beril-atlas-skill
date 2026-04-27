@@ -240,17 +240,13 @@ ignore = [
 ]
 
 ####################################################################
-# Open questions for Adam review
+# Resolved decisions (formerly "Open questions for Adam review")
 ####################################################################
-# 1. License text — confirm "MIT" or override.
-# 2. Python floor — >=3.10 reasonable? Your spike env is 3.10
-#    (cpython-310 in __pycache__). Going higher drops friend-machines
-#    that haven't upgraded. Going lower adds compat testing burden.
-# 3. Package name on PyPI eventually: "beril-atlas-skill" or
-#    "beril-atlas"? The "-skill" suffix clarifies it's a Claude Code
-#    skill package, but makes the pip install line ugly. No wrong answer.
-# 4. Should `openai` (CBORG's SDK) be required or under a [cborg]
-#    extra? Currently required because it's the default provider and
-#    a default-install-works story matters. If you'd prefer extras-
-#    only, we tell users `pipx install 'beril-atlas-skill[cborg]'`.
+# 1. License: MIT — confirmed.
+# 2. Python floor: >=3.10 — confirmed; spike env is 3.10. Hub install
+#    uses 3.13 cleanly under pipx.
+# 3. Package name: "beril-atlas-skill" stays for now. Renames if/when
+#    the package goes public on PyPI (private-only as of v0.1.12).
+# 4. openai SDK: required (not extras). Default-install-works story
+#    matters more than the small dep footprint cost.
 ####################################################################
