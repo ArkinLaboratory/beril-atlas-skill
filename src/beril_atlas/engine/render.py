@@ -5954,7 +5954,10 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
   activateFromHash();
 
   // Tab buttons -> hash change -> activate. (Use the hash so back/forward
-  // browser nav works as expected.)
+  // browser nav works as expected.) v0.3.0.1: don't scrollIntoView — the
+  // sticky tab nav is what the user just clicked; they're already at the
+  // top. Auto-scrolling pushes the activated section's top behind the
+  // nav, which reads as "jumpy."
   buttons.forEach(b => {{
     b.addEventListener('click', (e) => {{
       e.preventDefault();
@@ -5962,23 +5965,28 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
       if (tab) {{
         history.replaceState(null, '', '#' + tab);
         activate(tab);
-        // Scroll to top of the activated tab so panels are visible.
-        const el = document.getElementById(tab);
-        if (el) el.scrollIntoView({{behavior: 'auto', block: 'start'}});
       }}
     }});
   }});
 
-  // Sidebar links of the form #actN trigger the same tab switch.
-  document.querySelectorAll('aside.sidebar a[href^="#act"]').forEach(a => {{
+  // Sidebar links: ANY href="#X" where X is inside a section.act should
+  // activate that act. Pre-v0.3.0.1 only handled #actN links directly;
+  // #panel-foo links into hidden tabs scrolled to nothing.
+  document.querySelectorAll('aside.sidebar a[href^="#"]').forEach(a => {{
     a.addEventListener('click', (e) => {{
       const href = a.getAttribute('href') || '';
-      const m = href.match(/^#(act\\d)/);
-      if (m) {{
-        // Activate the tab; if the link points at an in-tab panel
-        // (#panel-foo), let the browser scroll to it next frame.
-        activate(m[1]);
-      }}
+      if (!href.startsWith('#') || href.length < 2) return;
+      const targetId = href.slice(1);
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      // If the target IS an act, activate it directly.
+      // Otherwise find its enclosing section.act.
+      const actEl = target.matches('section.act')
+        ? target
+        : target.closest('section.act');
+      if (actEl) activate(actEl.id);
+      // Let the browser's native scroll-to-anchor handle the panel
+      // positioning after activate() makes the act visible.
     }});
   }});
 
