@@ -2427,6 +2427,10 @@ _CSS = """
 :root {--navy:#1e3a5f;--accent:#1e40af;--warn:#b45309;--ok:#047857;--muted:#666;--border:#e5e5e5;--mock-bg:#fef3c7;--real-bg:#d1fae5;--detail-bg:#f0f9ff;--side-w:240px;}
 * { box-sizing: border-box; }
 html, body { margin:0; padding:0; }
+/* v0.3.11: anchor jumps land below the sticky tab-nav. Without this,
+   #panel-foo navigation puts the panel header behind the nav. 5rem is
+   roomy enough to clear a wrapped tab-nav on narrow viewports. */
+html { scroll-padding-top:5rem; }
 /* Grid with HARD-clamped sidebar and min-width:0 main column.
    Prior version (minmax(0,1fr) implicit) let long sidebar labels expand
    the sidebar track well past --side-w on wide viewports. Fixed-width
@@ -6751,12 +6755,19 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
     currentId = newId;
     Object.values(linkByHash).forEach(l => l.classList.remove('active'));
     if (linkByHash[newId]) linkByHash[newId].classList.add('active');
-    // Auto-open the containing act's sidebar section
+    // v0.3.11: Auto-OPEN the new act's section, but never close others.
+    // Pre-fix: forEach unconditionally set s.open = (s.dataset.act === newAct),
+    // which closed every other section on every cross-act scroll. If the
+    // user manually expanded section 5 to compare TOC entries, scrolling
+    // through act 3 slammed it shut. Cost of this fix: open sections
+    // accumulate across a long browsing session. User can manually close
+    // any that get cluttered. That's strictly better than aggressive
+    // auto-collapse.
     const newAct = actForPanel(visible[0].target);
     if (newAct && newAct !== currentAct) {{
       currentAct = newAct;
       sidebarSections.forEach(s => {{
-        s.open = (s.dataset.act === newAct);
+        if (s.dataset.act === newAct && !s.open) s.open = true;
       }});
     }}
   }}, {{ rootMargin: '-80px 0px -60% 0px', threshold: 0 }});
@@ -6784,8 +6795,26 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
   }}
 
   function activateFromHash() {{
+    // v0.3.11: when the hash is a non-act element id (e.g., #panel-foo
+    // from a sidebar link), map it to the enclosing section.act and
+    // activate THAT. Pre-fix this fell back to act0 unconditionally,
+    // which silently undid the act activation the click handler had
+    // just performed — sidebar clicks looked like "tab flashes correct
+    // then bounces back to Act 0."
     const h = (window.location.hash || '').replace(/^#/, '');
-    activate(h.startsWith('act') ? h : 'act0');
+    if (!h) {{ activate('act0'); return; }}
+    if (h.startsWith('act') && document.getElementById(h)) {{
+      activate(h);
+      return;
+    }}
+    const target = document.getElementById(h);
+    if (target) {{
+      const actEl = target.matches('section.act')
+        ? target
+        : target.closest('section.act');
+      if (actEl) {{ activate(actEl.id); return; }}
+    }}
+    activate('act0');
   }}
 
   // Initial state.
@@ -6807,9 +6836,17 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
     }});
   }});
 
-  // Sidebar links: ANY href="#X" where X is inside a section.act should
-  // activate that act. Pre-v0.3.0.1 only handled #actN links directly;
-  // #panel-foo links into hidden tabs scrolled to nothing.
+  // v0.3.11: sidebar link click handler. Pre-fix relied on browser's
+  // native anchor-jump (no preventDefault), which caused two failures:
+  //   1. The browser updated location.hash to #panel-foo, firing
+  //      hashchange → activateFromHash → fell back to act0 (state lost).
+  //   2. The native scroll happened immediately, before activate() had
+  //      finished swapping display:none/block on the target act, so the
+  //      panel ended up in wrong scroll position.
+  // Fix: preventDefault, set hash via history.replaceState (which does
+  // NOT fire hashchange), wait one animation frame for layout, then
+  // scrollIntoView. scroll-padding-top:5rem on html (CSS) handles the
+  // sticky-nav offset cleanly.
   document.querySelectorAll('aside.sidebar a[href^="#"]').forEach(a => {{
     a.addEventListener('click', (e) => {{
       const href = a.getAttribute('href') || '';
@@ -6817,14 +6854,20 @@ document.querySelectorAll('.panel > .panel-header').forEach(ph => {{
       const targetId = href.slice(1);
       const target = document.getElementById(targetId);
       if (!target) return;
-      // If the target IS an act, activate it directly.
-      // Otherwise find its enclosing section.act.
+      e.preventDefault();
       const actEl = target.matches('section.act')
         ? target
         : target.closest('section.act');
       if (actEl) activate(actEl.id);
-      // Let the browser's native scroll-to-anchor handle the panel
-      // positioning after activate() makes the act visible.
+      // replaceState does NOT trigger hashchange; safe to set without
+      // re-firing activateFromHash.
+      history.replaceState(null, '', '#' + targetId);
+      // Wait one frame for the activate()-induced layout to settle, then
+      // scroll. scroll-padding-top:5rem on html offsets for the sticky
+      // tab-nav so the panel header lands clear.
+      requestAnimationFrame(() => {{
+        target.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+      }});
     }});
   }});
 
