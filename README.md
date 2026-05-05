@@ -32,14 +32,6 @@ pipx install --force git+https://github.com/ArkinLaboratory/beril-atlas-skill.gi
 `python -m pip install --user pipx; python -m pipx ensurepath`
 (Windows).
 
-**SSH alternative** (if you prefer SSH over HTTPS for any reason):
-
-```bash
-pipx install git+ssh://git@github.com/ArkinLaboratory/beril-atlas-skill.git
-```
-
-Note the explicit `git@` — `git+ssh://` URLs require it for GitHub.
-
 ## Quickstart
 
 After install, point it at a BERIL checkout:
@@ -60,7 +52,7 @@ Then inside Claude Code in that BERIL directory:
 /beril-atlas-configure
 ```
 
-This walks you through provider selection (CBORG only in v0.1), appends
+This walks you through provider selection (CBORG default in v0.3.x; anthropic + google providers wired in v0.4), appends
 the atlas configuration template to `BERIL_ROOT/.env`, and runs a smoke
 test against your provider.
 
@@ -180,7 +172,7 @@ Choose your `--outputs-root` accordingly: `latest` for the working loop,
   notebooks, declared cross-project citations.
 - **L2**: LLM extraction over canonical doc sections — organisms, methods,
   databases, journals, functions, question-types, conclusions, drift
-  candidates. CBORG provider in v0.1.
+  candidates. CBORG provider in v0.3.x.
 - **L3**: DuckDB warehouse with 35+ SQL views; CSV + multi-sheet XLSX
   exports.
 - **L4**: composite sophistication scoring on 5 axes (depth, breadth,
@@ -206,25 +198,33 @@ Choose your `--outputs-root` accordingly: `latest` for the working loop,
   are not contacted. Citations are extracted as edges only.
 - **Single-user local.** Multi-tenant deployment is not exercised.
 
-## Documentation
+## Documentation map
 
-- `LAYOUT.md` — package structure, CLI surface, BERIL_ROOT discovery.
-- `CONFIGURE.md` — `/beril-atlas-configure` slash command + CLI spec.
-- `CONTRIBUTION.md` — vocab + methodology contribution flow with leak
-  tests for friends submitting drift-review promotions.
+| Document | Audience | What it covers |
+| --- | --- | --- |
+| [`PARTICIPANT-RUNBOOK.md`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill/blob/main/docs/cross-skill/PARTICIPANT-RUNBOOK.md) (cross-skill) | New BERIL users | Prereqs, hub install, configure, and BERIL workflow integration across **all four skills** (atlas, adversarial, paper-writer, presentation-maker). Start here if you've never used the suite. |
+| [`TUTORIAL.md`](TUTORIAL.md) | Researchers + operators | Atlas-specific 10-step run-book: install, configure, first cold scan, reading the dashboard, daily use, ad-hoc SQL, acting on findings. |
+| [`PLUGIN_GUIDE.md`](PLUGIN_GUIDE.md) | Operators wanting depth | Comprehensive single-page reference for atlas — every CLI flag, every error class, all troubleshooting recipes. Per the 2026-05-05 inter-team agreement, `PLUGIN_GUIDE` is no longer the uniform pattern; this document is kept as atlas's comprehensive reference. |
+| [`CONFIGURE.md`](CONFIGURE.md) | Hub operators | Canonical spec for the `/beril-atlas-configure` slash command + CLI fallback. Provider selection, env-var template, smoke-test diagnostics. |
+| [`CONTRIBUTION.md`](CONTRIBUTION.md) | Vocab + methodology contributors | How to promote a vocab-local entry into vocab-shipped; leak-test checklist for friends submitting drift-review promotions. |
+| [`LAYOUT.md`](LAYOUT.md) | Package maintainers | Repository tree, CLI surface, path discovery, vocab overlay mechanics, cache-key shape, v0.2/v0.3 architectural evolution. |
+| [`CHANGELOG.md`](CHANGELOG.md) | Anyone tracking versions | Full v0.1.0 → v0.3.12 history. |
 
-In-skill (after `install-skill`):
-- `<BERIL>/.claude/skills/beril-atlas/references/design-note.md` —
-  authoritative architectural spec.
-- `<BERIL>/.claude/skills/beril-atlas/references/dashboard-caveats.md` —
-  the risk register every dashboard panel cites.
+In-skill, after `beril-atlas install-skill <BERIL_ROOT>`:
+
+| Document | Audience | What it covers |
+| --- | --- | --- |
+| `<BERIL>/.claude/skills/beril-atlas/references/design-note.md` | Architects + atlas maintainers | Authoritative architectural spec. |
+| `<BERIL>/.claude/skills/beril-atlas/references/dashboard-caveats.md` | Dashboard readers | Risk register every dashboard panel cites. |
+| `<BERIL>/.claude/skills/beril-atlas/references/sophistication-score-proposal.md` | Sophistication-axis design | The 5-axis composite scoring rationale. |
+| `<BERIL>/.claude/skills/beril-atlas/references/what-we-capture.md` | Anyone wondering what L1 + L2 inventory | End-to-end inventory of what the scan captures. |
+
+Sibling BERIL plug-in skills:
+[`beril-adversarial-skill`](https://github.com/ArkinLaboratory/beril-adversarial-skill),
+[`beril-paper-writer-skill`](https://github.com/ArkinLaboratory/beril-paper-writer-skill),
+[`beril-presentation-maker-skill`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill).
 
 ## Troubleshooting
-
-**`pipx install` fails with `Permission denied (publickey)`**:
-You used the SSH form but your SSH key isn't loaded in the agent.
-Either switch to the HTTPS form (no auth needed for this public repo)
-or run `ssh-add ~/.ssh/id_ed25519` first.
 
 **`beril-atlas` prints "could not find BERIL_ROOT"**:
 The CLI walks up from cwd looking for a directory with `.env`,

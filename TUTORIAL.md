@@ -1,5 +1,18 @@
 # BERIL Atlas — Tutorial
 
+> **Reading order.** If you're new to the four-skill BERIL suite,
+> read the cross-skill
+> [`PARTICIPANT-RUNBOOK.md`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill/blob/main/docs/cross-skill/PARTICIPANT-RUNBOOK.md)
+> first — it covers the shared prerequisites, JupyterHub install
+> ergonomics, configure flow, and BERIL workflow integration across
+> all four skills. THIS tutorial covers atlas-specific operation
+> that the runbook doesn't.
+>
+> Shared content tracked in PARTICIPANT-RUNBOOK; this document
+> last-checked against it 2026-05-05. If you spot drift between
+> them, the runbook wins for shared content; flag the drift to the
+> atlas maintainer.
+
 A step-by-step guide for installing the atlas, running your first
 scan, and reading the dashboard. Once you've done it once, the
 everyday workflow is one command.

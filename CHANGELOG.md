@@ -2,6 +2,44 @@
 
 All shipped versions of `beril-atlas-skill`. Latest first.
 
+## v0.3.13 — 2026-05-05 (cross-skill doc alignment)
+
+Doc-only follow-up to v0.3.12 that aligns atlas with the 2026-05-05
+inter-team agreement on the four-skill plug-in suite documentation
+structure.
+
+- **README.md** — added a tabular **Documentation map** section
+  covering every atlas .md (audience + content summary) plus a row
+  pointing at the cross-skill
+  [`PARTICIPANT-RUNBOOK.md`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill/blob/main/docs/cross-skill/PARTICIPANT-RUNBOOK.md).
+  Replaces the previous bare bullet-list `## Documentation` section.
+- **PLUGIN_GUIDE.md** — head redirect banner. Per the inter-team
+  agreement, `PLUGIN_GUIDE` is no longer the uniform pattern across
+  the four skills — `TUTORIAL` + `HUB_INSTALL` + `CONFIGURE` is. Atlas
+  keeps its PLUGIN_GUIDE as the comprehensive operator reference (the
+  CLI surface + flag economy is broad enough to warrant a single
+  grep-able landing page) but the banner directs new readers to
+  TUTORIAL for quickstart, CONFIGURE for provider setup, and the
+  cross-skill RUNBOOK for first-time orientation.
+- **TUTORIAL.md** — head deference banner: shared content tracked in
+  PARTICIPANT-RUNBOOK; this document last-checked against it
+  2026-05-05; runbook wins for shared content. Lightweight
+  drift-tracking discipline so future runbook updates have a clear
+  re-sync gate.
+- **Post-v0.3.12 SSH/staleness cleanup** that didn't make the
+  v0.3.12 commit — README's "SSH alternative" install block stripped
+  (public-repo install is single HTTPS one-liner); SSH-specific
+  troubleshooting entry stripped; CONFIGURE.md's chicken-and-egg
+  install fallback now uses HTTPS; PLUGIN_GUIDE.md's "SSH
+  alternative" §3 subsection stripped; two `v0.1` references in
+  README updated to `v0.3.x`.
+
+No code changes; no behavior changes. 153/153 unit tests still pass.
+Open questions from the inter-team thread (PARTICIPANT-RUNBOOK
+permanent home; audience-layered docs/ subdirectories;
+RELEASE_NOTES vs CHANGELOG convergence) are deliberately left open
+for the post-May-7 cleanup pass.
+
 ## v0.3.12 — 2026-05-05 (release-candidate hardening + repo-public)
 
 The four BERIL plug-in skill repos
@@ -35,6 +73,8 @@ Bundled fixes from the four-pass adversarial finalization review.
   instead of telling users to `cp` the cache file.
 - **CHANGELOG.md** rebuilt to cover v0.2.0 → v0.3.12 (was stuck at v0.1.12).
 - **LAYOUT.md** full rewrite to reflect v0.3 dashboard architecture.
+- **PLUGIN_GUIDE.md** + **TUTORIAL.md** added — comprehensive operator
+  reference + 10-step participant run-book.
 - **Repo cleanliness**: removed tracked `__pycache__/`, `.DS_Store`,
   `.pytest_cache/` artifacts from prior commits (`.gitignore` already
   covered them; only the historical-tracking residue remained).

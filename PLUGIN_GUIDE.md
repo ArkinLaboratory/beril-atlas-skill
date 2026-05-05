@@ -1,5 +1,28 @@
 # beril-atlas — Plugin Guide
 
+> **Where to go first (2026-05-05 inter-team agreement):**
+> - **New to the four-skill suite?** Start at the cross-skill
+>   [`PARTICIPANT-RUNBOOK.md`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill/blob/main/docs/cross-skill/PARTICIPANT-RUNBOOK.md)
+>   for prerequisites, install, configure, and the unified BERIL workflow.
+> - **Want a quickstart for atlas specifically?** See
+>   [`TUTORIAL.md`](TUTORIAL.md) — the 10-step run-book.
+> - **Setting up the LLM provider for atlas?** See
+>   [`CONFIGURE.md`](CONFIGURE.md) — the `/beril-atlas-configure`
+>   slash-command spec.
+> - **Comprehensive operator reference (this document)** — every CLI
+>   flag, every error class, all troubleshooting recipes. Read for
+>   depth, not first-pass orientation.
+>
+> Per the May 5 cross-skill direction, `PLUGIN_GUIDE` is no longer the
+> uniform pattern — `TUTORIAL` + `HUB_INSTALL` + `CONFIGURE` are. This
+> document is kept as the comprehensive single-page reference for atlas
+> rather than absorbed into the new three-doc split, because atlas's
+> CLI surface + flag economy + scan-mode coverage is broad enough to
+> warrant a single landing page operators can grep. If that judgment
+> changes, this document will be split or retired in a future cleanup.
+
+---
+
 End-to-end guide to installing, configuring, testing, and operating
 the `beril-atlas` skill within a BERIL deployment. Covers the cold-scan
 + periodic-rescan workflows, the dashboard, the cache-flag economics,
@@ -154,16 +177,6 @@ build):
 ```bash
 pipx install --force /path/to/beril_atlas_skill-0.3.12-py3-none-any.whl
 ```
-
-### SSH alternative (if you have a registered SSH key)
-
-```bash
-pipx install --force git+ssh://git@github.com/ArkinLaboratory/beril-atlas-skill.git
-```
-
-The `git@` is mandatory — `git+ssh://github.com/...` (without it)
-fails with `Permission denied (publickey)`. If `pipx` warns about
-PATH, run `pipx ensurepath` once after the install.
 
 ### Verify the install
 
