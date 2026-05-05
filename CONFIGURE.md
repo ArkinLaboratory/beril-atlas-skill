@@ -402,8 +402,8 @@ On success:
   `BERIL_ATLAS_CONFIGURED_VERSION=<current package version>` in .env via
   Edit.
 - Tell the user: "Atlas configured successfully. Provider=X, model=Y, latency=Zms.
-  You can now run `/beril-atlas-scan` or `beril-atlas scan` from this BERIL
-  directory."
+  You can now run `/beril-atlas` (in Claude Code) or `beril-atlas scan` (CLI)
+  from this BERIL directory."
 
 On failure, branch by `error_class`:
 

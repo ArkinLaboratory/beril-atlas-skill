@@ -2,6 +2,239 @@
 
 All shipped versions of `beril-atlas-skill`. Latest first.
 
+## v0.3.12 — 2026-05-05 (release-candidate hardening + repo-public)
+
+The four BERIL plug-in skill repos
+([`beril-atlas-skill`](https://github.com/ArkinLaboratory/beril-atlas-skill),
+[`beril-adversarial-skill`](https://github.com/ArkinLaboratory/beril-adversarial-skill),
+[`beril-paper-writer-skill`](https://github.com/ArkinLaboratory/beril-paper-writer-skill),
+[`beril-presentation-maker-skill`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill))
+went public on 2026-05-05. Install instructions simplified accordingly
+(no more PAT / SSH-only paths).
+
+Bundled fixes from the four-pass adversarial finalization review.
+- **Named-columns INSERTs across all 11 populator sites in `warehouse.py`**
+  (projects, project_revisions, authors, project_authors, sections,
+  notebooks, reuse_edges, entity_mentions, sophistication_composite,
+  research_lines, research_line_subclusters, drift_candidates,
+  drift_candidates' sibling rows). Pre-fix: positional `INSERT INTO t
+  VALUES (?, ?, ...)` was the v0.3.2-class bug pattern that caused
+  every scan's DELETE to wipe the table when a column was added without
+  a synchronized populator update. Now each INSERT explicitly lists its
+  columns; future column additions don't break the populator.
+- **Round-trip regression test for `populate_revisions`** mirroring
+  the v0.3.4 test for `populate_projects`. Catches column-count
+  mismatches at CI time, not at runtime in production.
+- **Phantom `/beril-atlas-scan` slash command** removed from
+  `CONFIGURE.md`. The actual slash commands are `/beril-atlas`,
+  `/beril-atlas-configure`, `/beril-atlas-update` — there is no
+  `/beril-atlas-scan`. Users following the configure flow would have
+  typed it and gotten silent no-op.
+- **README.md** version banner refresh; archival-snapshot workflow
+  uses the new `--seed-cache-from` / `--cache-path` flags directly
+  instead of telling users to `cp` the cache file.
+- **CHANGELOG.md** rebuilt to cover v0.2.0 → v0.3.12 (was stuck at v0.1.12).
+- **LAYOUT.md** full rewrite to reflect v0.3 dashboard architecture.
+- **Repo cleanliness**: removed tracked `__pycache__/`, `.DS_Store`,
+  `.pytest_cache/` artifacts from prior commits (`.gitignore` already
+  covered them; only the historical-tracking residue remained).
+  Cleaned stale `.commit-message-v0.3.6.txt` through `v0.3.9.txt` (one-shot
+  files for already-merged releases).
+- **Test date-flake fix**: `test_v036_discoveries_drawer_per_project_cap`
+  used `today.strftime("%Y-%m")` for the bucket lookup but seeded
+  revisions at `today - 10 days`. The two would land in different month
+  buckets whenever today was within 10 days of a month boundary; today
+  (2026-05-05) was the trigger.
+
+## v0.3.11 — 2026-05-05 (sidebar nav state + scroll positioning)
+
+Three independent bugs reported on the live hub dashboard 2026-04-28:
+"sidebar nav not maintaining state, not jumping to exact location."
+- **`activateFromHash` clobbered act selection**: when hash was a
+  non-act element id (e.g., `#panel-foo` from a sidebar link), the
+  hashchange handler fell back to act0 — silently undoing the act
+  activation the click handler had just performed. Fix: map non-act
+  hashes to their enclosing `section.act` and activate THAT.
+- **IntersectionObserver collapsed manually-opened sections**:
+  unconditional `s.open = (s.dataset.act === newAct)` closed every
+  sidebar section except the new one on every cross-act scroll. Fix:
+  additive auto-open (`if !s.open then s.open = true`), never close.
+- **Anchor jumps landed under the sticky tab-nav**: `.panel`
+  `scroll-margin-top:1rem` was less than the sticky-nav height (~50px).
+  Fix: `html { scroll-padding-top:5rem }` plus explicit
+  `requestAnimationFrame` + `scrollIntoView` from the click handler so
+  layout settles before scroll.
+- 4 source-text regression tests against rendered HTML (152/152 pass).
+
+## v0.3.10 — 2026-05-05 (project × database matrix heatmap)
+
+Adam asked for a "tenant/databases used together graph: projects as hubs,
+databases as spokes" on 2026-04-27. Three layout options were considered
+(bipartite parallel coords, force-directed network, matrix heatmap);
+shipped the matrix heatmap.
+- **`fetch_project_database_matrix`**: both axes sorted by total mention
+  count descending, sparse rows + sparse columns excluded, proposed:*
+  canonical_ids excluded (LLM hallucinations awaiting drift adjudication).
+- **`render_project_database_matrix_panel`**: Plotly heatmap with
+  white→light-green→dark-green colorscale, autorange:'reversed' so most
+  prolific project sits on top, click-to-drill on row labels (opens
+  project drawer). Wired into Act 2 with sidebar TOC entry.
+- 6 unit tests including matrix orientation lock-in (catches off-by-one
+  or transposed axes).
+
+## v0.3.9 — 2026-05-05 (section chunking for L2 truncation)
+
+Some IBD project sections (~180K chars) produced more L2 output than
+the 64K max_tokens ceiling could hold. v0.1.10's length-aware retry
+couldn't save them.
+- **`chunking.chunk_section()`**: three-tier boundary cascade
+  (subheading `###`/`####` → paragraph `\n\n` → character fallback)
+  with default 12K-char threshold, no overlap.
+- **Cache-preserving design**: chunked sections key on
+  `sha256(content + f"|chunk={i}/{N}")`, but unchunked sections
+  (chunk_id=None) keep the byte-identical pre-v0.3.9 cache key. Every
+  v0.1.x – v0.3.7 cache row stays valid. Tested via pre-seed +
+  zero-LLM-calls regression.
+- **`UniversalExtractor.extract`** refactored: `_extract_chunk()` shares
+  cache+LLM+retry+parse logic with unchunked sections; section-level
+  mention dedup by (entity_kind, canonical_id, surface_form).
+- Live IBD validation: 8 sections re-extracted across 41 chunks
+  (one section into 15 chunks), zero `finish_reason='length'`. Memory
+  entry `feedback_cache_key_chunked_only_when_chunked.md` captures the
+  generalizable pattern.
+
+## v0.3.8 — 2026-05-05 (untracked-projects panel + cache CLI flags)
+
+- **Untracked-projects panel** (Act 3) lists projects with extracted
+  conclusions but NULL `effective_completion_date` AND NULL
+  `completion_date` — invisible to every trend panel because trend SQL
+  filters on COALESCE IS NOT NULL. Caught 4 projects on Adam's hub
+  holding 251 conclusions silently dropped. Surface-only design:
+  atlas does NOT silently fall back to `last_touched` (would lose the
+  diagnostic). Fix is data-side (add Revision History to the project's
+  RESEARCH_PLAN/REPORT).
+- **`--cache-path PATH`** overrides the default
+  `outputs_root/extraction_cache.duckdb`; persistent cache across runs.
+- **`--seed-cache-from PATH`** copies a prior cache into the destination
+  before extraction. Refuses to overwrite an existing destination cache
+  (safety: explicit delete first).
+- 9 new unit tests including cache-resolution helper (7) and untracked
+  panel (2).
+
+## v0.3.7 — 2026-04-29 (drawer column-width fix)
+
+Layout-only patch on top of v0.3.6.
+- **`table-layout:fixed`** + `<colgroup>` with explicit per-column widths
+  (project 14% / source 16% / claim 38% / quote 32%) on the discoveries
+  drawer table. Pre-fix: longest-cell determined column width; verbatim
+  quote column bled off the panel right edge with mid-word truncation.
+
+## v0.3.6 — 2026-04-29 (April-trend visibility + sortable drawer)
+
+- **Monthly tick labels** on every cumulative-trend chart x-axis. Plotly's
+  auto-tick chose weekly ticks (Feb 1 ... Mar 29) on a 3-month range and
+  never labeled "Apr 2026" — the rightmost datapoint sat in unlabeled
+  space and the eye read it as "no data after April 1." Forcing
+  `tickmode:'array'` with explicit monthly tickvals/ticktext fixed it.
+- **Discoveries drawer becomes a sortable+filterable table**: 4 columns
+  (Project / Source / Claim / Verbatim quote), per-project cap of 20.
+  Pre-fix: SQL ORDER BY (project_id, mention_id) + LIMIT rn<=20 meant
+  the alphabetically-first project with ≥20 claims filled the entire
+  bucket. Now every contributing project surfaces; user filters to focus.
+- Memory entry `feedback_screenshot_before_layer_diagnosis.md` captures
+  the diagnostic-loop lesson from v0.3.3 → v0.3.4 → v0.3.6 (three
+  patches attacked the wrong layer before screenshots showed the actual
+  bug was Plotly's axis labeling).
+
+## v0.3.5 — 2026-04-27 (positive panel mirrors negative)
+
+- **`render_positive_result_rate_panel`** expanded to fully mirror
+  `render_negative_result_rate_panel` (Monthly / Per-project toggle,
+  click-to-drill, claim_type tag distinguishing mechanistic from
+  predictive). Companion to v0.3.2's minimal positive panel.
+
+## v0.3.4 — 2026-04-27 (populate_projects column-count fix, hotfix)
+
+Live hub deploy of v0.3.3 surfaced empty `projects` table in every
+warehouse.
+- **`populate_projects` rewritten with named-columns INSERT.** v0.3.2
+  added `effective_completion_date` to the projects schema; the
+  positional `INSERT INTO projects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  in the populator had 21 placeholders for the new 22-column table.
+  Every scan's DELETE wiped projects then INSERT crashed silently;
+  warehouses ended with empty projects table. Added round-trip
+  regression test.
+- Memory entry `feedback_named_columns_in_inserts.md` captures the
+  generalizable rule.
+
+## v0.3.3 — 2026-04-27 (effective_completion_date backfill, hotfix)
+
+- **Migration backfill** in `create_schema`: `UPDATE projects p SET
+  effective_completion_date = t.max_date FROM (SELECT project_id,
+  MAX(version_date) FROM project_revisions GROUP BY project_id) t
+  WHERE p.project_id = t.project_id AND p.effective_completion_date IS NULL`.
+- **`COALESCE(p.effective_completion_date, p.completion_date)`** in
+  every trend panel's SQL, so trend axes pick up in-flight April
+  revisions even on warehouses that pre-date the migration.
+
+## v0.3.2 — 2026-04-27 (effective_completion_date column + Act-3 panels)
+
+- **`projects.effective_completion_date`** column added: latest activity
+  across ALL revisions (any source_doc), not just RESEARCH_PLAN. Trend
+  panels' x-axis now picks up in-flight April work that has REPORT
+  revisions but no closing RESEARCH_PLAN entry. Narrower
+  `completion_date` semantic preserved.
+- **`enrich_projects`** populates effective_completion_date as
+  `MAX(version_date) OVER project_id` across all revisions.
+- **Positive-result-rate panel** (minimal): mechanistic + predictive
+  share over time. Companion to negative-result-rate hygiene panel.
+  Expanded to full Monthly/Per-project toggle in v0.3.5.
+- **What's-stuck panel**: projects whose latest revision is more than
+  N days old (default 30). Sortable+filterable table with click-through
+  to project drawer.
+
+## v0.3.1 — 2026-04-26 (jumpy-tab + sidebar handler hotfix)
+
+- **`scrollIntoView({block:'start'})` removed from tab click handler** —
+  caused panel headers to scroll behind the sticky nav.
+- **Sidebar handler extended** to detect ANY `#X` link and find the
+  enclosing `section.act` (pre-fix: only handled `#actN` links).
+
+## v0.3.0 — 2026-04-26 (tabbed dashboard)
+
+Major architectural shift in the dashboard layout.
+- **One Act visible at a time**: `<section class="act">` siblings with
+  CSS `display:none/block` toggled by tab buttons + URL hash. Was:
+  `<details>` accordions. Tab nav at top of main content; URL hash
+  controls initial tab + supports deep-linking.
+- **L7 findings panel repositioned** from above-Act-0 to inside Act 1
+  ("is it alive?") — backward-looking structural reads belong with
+  measurement, not as a banner.
+- Body-level shared drawer for entity / author / project navigation:
+  `window.showEntityDetail`, `showAuthorDetail`, `showProjectDetail`
+  with back-stack.
+
+## v0.2.1 — 2026-04-26 (NameError hotfix)
+
+- **JS comment brace-escape**: `// back-stack of {kind, id, title, html}`
+  inside an f-string template hit Python's f-string parser at render
+  time. `{kind, id, title, html}` was treated as a Python expression.
+  Fix: escape to `{{kind, id, title, html}}`. Added regression test
+  that ACTUALLY evaluates the f-string against synthetic warehouses
+  (memory entry `feedback_render_test_must_evaluate_fstring.md`).
+
+## v0.2.0 — 2026-04-26 (pervasive entity navigation)
+
+- **Body-level drawer** for entity / author / project detail with
+  back-stack navigation. Replaces panel-local detail divs scattered
+  across many panels.
+- **Click-through everywhere**: every `data-entity-id`, `data-author-id`,
+  `data-project-id` attribute on elements opens the drawer to that
+  entity. Delegated click handler at body level.
+- **Author drawer** rewrite: complete project list with clickable
+  chips opening project-detail; distinguishes orphan projects (no
+  declared citations) from those in research lines.
+
 ## v0.1.12 — 2026-04-26 (hotfix)
 
 - **Edge-types embedded table**: fixed empty Source/Cited project columns

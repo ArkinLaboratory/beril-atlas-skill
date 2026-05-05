@@ -1,50 +1,61 @@
 # beril-atlas-skill — package layout + CLI structure
 
 **Originally drafted:** 2026-04-24 (Task #3, pre-build).
-**Last updated:** 2026-04-26 to reflect v0.1.6 sibling-skills refactor and v0.1.7–v0.1.12 fixes.
-**Status:** describes current shipped state through v0.1.12.
+**Last full rewrite:** 2026-05-05 to reflect v0.2.x + v0.3.x architectural
+shifts (entity drawer, tabbed dashboard, section chunking, project ×
+database matrix, sidebar nav, named-columns INSERT discipline).
+**Status:** describes current shipped state through v0.3.12.
 
 This document is the ground-truth layout reference for
-`ArkinLaboratory/beril-atlas-skill`. Differs from the original 2026-04-24
-draft in two material ways:
-
-- v0.1.6: shipped skills moved from a single `src/beril_atlas/skill/` folder
-  to a `src/beril_atlas/skills/` (plural) tree containing one folder per
-  Claude Code skill (umbrella + slash-command siblings).
-- v0.1.10/v0.1.11: render output gained sortable+filterable tables,
-  per-panel "Generated at" timestamps, and a stable revision_id format
-  (no byte offset).
+`ArkinLaboratory/beril-atlas-skill`. The package shape established at
+v0.1.6 (sibling-skills tree, single `engine/` for the Python core) has
+held throughout v0.1 → v0.3; the changes below are additions, not
+restructurings.
 
 ## Repository tree (current)
 
 ```
 ArkinLaboratory/beril-atlas-skill/
-├── pyproject.toml
-├── README.md
-├── LICENSE
-├── .gitignore
-├── .gitattributes                 # line-ending hygiene (Windows friends)
+├── pyproject.toml                # v0.3.12; classifier "Private :: Do Not Upload"
+│                                 # blocks accidental PyPI even though GitHub
+│                                 # repo went public 2026-05-05.
+├── README.md                     # user-facing front door, v0.3.12
+├── CHANGELOG.md                  # full v0.1.0 → v0.3.12 history
+├── CONFIGURE.md                  # /beril-atlas-configure slash command spec
+├── CONTRIBUTION.md               # vocab + methodology contribution flow
+├── PLUGIN_GUIDE_SKELETON.md      # in-progress operator guide
+│                                 # (rename to PLUGIN_GUIDE.md when filled)
+├── LAYOUT.md                     # ← this document
+├── LICENSE                       # MIT
+├── .gitignore                    # covers __pycache__/, .pytest_cache/,
+│                                 # .DS_Store, .env, dist/, *.egg-info, etc.
+├── .gitattributes                # line-ending hygiene (Windows friends)
 ├── src/
 │   └── beril_atlas/
-│       ├── __init__.py             # exports __version__
+│       ├── __init__.py             # exports __version__ = "0.3.12"
 │       ├── cli.py                  # argparse entry point, subcommand dispatch
 │       ├── discovery.py            # BERIL_ROOT + skill-dir resolution
 │       ├── commands/
 │       │   ├── __init__.py
-│       │   ├── install_skill.py    # walks skills/*/ + copies to .claude/skills/<name>/
+│       │   ├── install_skill.py    # walks skills/*/ → .claude/skills/<name>/
 │       │   ├── configure.py        # CLI fallback for /beril-atlas-configure
 │       │   ├── config_status.py    # state machine inspector
 │       │   ├── smoke_test.py       # advisory LLM ping
 │       │   ├── template_env.py     # writes .env template
 │       │   └── mark_configured.py  # state-machine transition helper
-│       ├── engine/                 # was scripts/atlas_lib/
+│       ├── engine/                 # Python core (was scripts/atlas_lib/)
 │       │   ├── __init__.py
 │       │   ├── authors.py          # em-dash separator parser (v0.1.8)
+│       │   ├── chunking.py         # section chunker (v0.3.9) — three-tier
+│       │   │                       # boundary cascade (subhead → para → char)
 │       │   ├── contamination.py    # path-membership self-test (v0.1.9)
 │       │   ├── drift.py
-│       │   ├── extraction_cache.py # finish_reason='length' bypass (v0.1.8)
+│       │   ├── extraction_cache.py # finish_reason='length' bypass (v0.1.8);
+│       │   │                       # optional chunk_id (v0.3.9)
 │       │   ├── extractors/
-│       │   │   ├── __init__.py     # length-aware retry (v0.1.10)
+│       │   │   ├── __init__.py     # length-aware retry (v0.1.10);
+│       │   │   │                   # _extract_chunk() + section-level dedup
+│       │   │   │                   # (v0.3.9)
 │       │   │   └── universal.py    # null-source_quote fix (v0.1.7)
 │       │   ├── llm_client.py       # extract_json + json5 fallback (v0.1.9)
 │       │   ├── llm_config.py       # default_max_tokens=32000 (v0.1.11)
@@ -55,14 +66,26 @@ ArkinLaboratory/beril-atlas-skill/
 │       │   ├── references.py
 │       │   ├── research_lines.py
 │       │   ├── revisions.py
-│       │   ├── scan.py             # was scripts/atlas_scan.py
+│       │   ├── scan.py             # was scripts/atlas_scan.py;
+│       │   │                       # --cache-path / --seed-cache-from (v0.3.8)
 │       │   ├── sections.py
 │       │   ├── sophistication.py
 │       │   ├── vocab.py
-│       │   ├── warehouse.py        # content-keyed revision_id (v0.1.8); name-author merge (v0.1.10)
-│       │   └── render.py           # sortable+filterable + Gantt sub-rows + timestamps (v0.1.10–v0.1.12)
-│       └── skills/                 # plural — ships as package_data, walked by install_skill
-│           ├── beril-atlas/                   # umbrella skill (orientation + engine self-state)
+│       │   ├── warehouse.py        # 11 named-columns INSERTs (v0.3.4 + v0.3.12);
+│       │   │                       # effective_completion_date column (v0.3.2);
+│       │   │                       # content-keyed revision_id (v0.1.8)
+│       │   └── render.py           # v0.2: body-level entity drawer +
+│       │                           #       click-through navigation;
+│       │                           # v0.3.0: tabbed dashboard, sticky tab-nav;
+│       │                           # v0.3.2/.3.5: positive/negative result panels;
+│       │                           # v0.3.6: monthly ticks + sortable drawer;
+│       │                           # v0.3.7: drawer column widths;
+│       │                           # v0.3.8: untracked-projects panel;
+│       │                           # v0.3.10: project × database matrix;
+│       │                           # v0.3.11: sidebar nav fixes (scroll-padding
+│       │                           #          + activateFromHash + additive IO)
+│       └── skills/                 # plural — package_data, walked by install_skill
+│           ├── beril-atlas/                   # umbrella (orientation + state)
 │           │   ├── SKILL.md
 │           │   ├── prompts/
 │           │   │   └── extract_universal.v1.md   # universal.v3 (v0.1.9)
@@ -84,21 +107,29 @@ ArkinLaboratory/beril-atlas-skill/
 │           │       ├── vocab-reference.md
 │           │       ├── what-we-capture.md
 │           │       └── dashboard-mockup.html
-│           ├── beril-atlas-configure/SKILL.md  # /beril-atlas-configure slash command
-│           └── beril-atlas-update/SKILL.md     # /beril-atlas-update slash command (v0.1.5)
+│           ├── beril-atlas-configure/SKILL.md  # /beril-atlas-configure
+│           └── beril-atlas-update/SKILL.md     # /beril-atlas-update (v0.1.5)
 └── tests/
-    ├── unit/                       # 96 tests as of v0.1.12
+    ├── unit/                                 # 153 tests as of v0.3.12
     │   ├── test_discovery.py
     │   ├── test_config_status.py
     │   ├── test_smoke_test.py
-    │   ├── test_extractor_null_handling.py    # v0.1.7 regressions
-    │   ├── test_v018_fixes.py                 # v0.1.8 regressions
-    │   ├── test_v019_fixes.py                 # v0.1.9 regressions
-    │   ├── test_v0110_fixes.py                # v0.1.10 regressions
-    │   ├── test_v0111_fixes.py                # v0.1.11 regressions
-    │   └── test_v0112_fixes.py                # v0.1.12 regressions
-    └── integration/                # marked @pytest.mark.integration
-        ├── conftest.py             # auto-marks tests in this dir
+    │   ├── test_extractor_null_handling.py   # v0.1.7 regressions
+    │   ├── test_v018_fixes.py                # v0.1.8
+    │   ├── test_v019_fixes.py                # v0.1.9
+    │   ├── test_v0110_fixes.py               # v0.1.10
+    │   ├── test_v0111_fixes.py               # v0.1.11
+    │   ├── test_v0112_fixes.py               # v0.1.12
+    │   ├── test_v02_entity_drawers.py        # v0.2 navigation primitives
+    │   ├── test_v030_tabs.py                 # v0.3.0 tabbed dashboard
+    │   ├── test_v032_data_panels.py          # v0.3.2 + v0.3.4 round-trip
+    │   │                                     # + v0.3.6 + v0.3.8 + v0.3.12
+    │   ├── test_v038_cache_resolution.py     # v0.3.8 cache flags
+    │   ├── test_v039_chunking.py             # v0.3.9 chunker + cache shape
+    │   ├── test_v0310_database_matrix.py     # v0.3.10 matrix panel
+    │   └── test_v0311_sidebar_nav.py         # v0.3.11 sidebar regressions
+    └── integration/                          # marked @pytest.mark.integration
+        ├── conftest.py                       # auto-marks tests in this dir
         ├── test_authors.py
         ├── test_contamination.py
         ├── test_drift.py
@@ -118,62 +149,124 @@ ArkinLaboratory/beril-atlas-skill/
         └── test_warehouse_idempotency.py
 ```
 
-The v0.1.6 sibling-skills design — one `SKILL.md` per skill folder, no
-nested `commands/` directories — was determined by Claude Code's actual
-skill-discovery convention; pre-v0.1.6 we placed slash-command markdown
-under `skill/commands/` and Claude Code didn't register them. See the
-v0.1.6 commit message and the umbrella `SKILL.md`'s "Sibling slash-command
-skills" section for the design rationale.
+## Architectural evolution v0.2 → v0.3
 
-## Module rename map
+The package shape has been stable since v0.1.6; what changed in
+v0.2/v0.3 is **what the engine produces** and **how the dashboard reads
+it**. Highlights:
 
-Old path → new path. Implementation in Task #6 migration pass.
+### v0.2 — pervasive entity navigation
 
-| Old (spike/beril-extended) | New (src/beril_atlas) |
-| --- | --- |
-| `scripts/atlas_lib/__init__.py` | `engine/__init__.py` |
-| `scripts/atlas_lib/authors.py` | `engine/authors.py` |
-| `scripts/atlas_lib/contamination.py` | `engine/contamination.py` |
-| `scripts/atlas_lib/drift.py` | `engine/drift.py` |
-| `scripts/atlas_lib/extraction_cache.py` | `engine/extraction_cache.py` |
-| `scripts/atlas_lib/extractors/__init__.py` | `engine/extractors/__init__.py` |
-| `scripts/atlas_lib/extractors/organisms.py` | **deleted** (deprecated shim) |
-| `scripts/atlas_lib/extractors/universal.py` | `engine/extractors/universal.py` |
-| `scripts/atlas_lib/llm_client.py` | `engine/llm_client.py` |
-| `scripts/atlas_lib/llm_config.py` | `engine/llm_config.py` (reworked — see discovery below) |
-| `scripts/atlas_lib/metrics.py` | `engine/metrics.py` |
-| `scripts/atlas_lib/notebooks.py` | `engine/notebooks.py` |
-| `scripts/atlas_lib/posthoc_classifiers.py` | `engine/posthoc_classifiers.py` |
-| `scripts/atlas_lib/projects.py` | `engine/projects.py` |
-| `scripts/atlas_lib/references.py` | `engine/references.py` |
-| `scripts/atlas_lib/research_lines.py` | `engine/research_lines.py` |
-| `scripts/atlas_lib/revisions.py` | `engine/revisions.py` |
-| `scripts/atlas_lib/sections.py` | `engine/sections.py` |
-| `scripts/atlas_lib/sophistication.py` | `engine/sophistication.py` |
-| `scripts/atlas_lib/vocab.py` | `engine/vocab.py` (reworked — vocab-shipped + vocab-local overlay) |
-| `scripts/atlas_scan.py` | `engine/scan.py` + thin wrapper `commands/scan.py` |
-| `scripts/atlas_metrics.py` | thin wrapper `commands/metrics.py` (logic mostly in engine) |
-| `scripts/atlas_warehouse.py` | `engine/warehouse.py` |
-| `scripts/atlas_render.py` | `engine/render.py` (direct migration, NO split in v0.1) + thin wrapper `commands/render.py` |
+Body-level drawer for entity / author / project detail with back-stack
+navigation (`window.showEntityDetail`, `showAuthorDetail`,
+`showProjectDetail`). Every `data-entity-id` / `data-author-id` /
+`data-project-id` attribute on a panel element opens that drawer; one
+delegated click handler at body level routes everything. Removes
+panel-local detail divs that scattered across many panels in v0.1.
 
-### render.py split deferred to v0.2
+### v0.3.0 — tabbed dashboard
 
-Earlier draft proposed splitting the 248KB/~7k-line `atlas_render.py` into
-four files. **Not doing this in v0.1** (decided 2026-04-24) because:
+Architectural shift from `<details>` accordions to
+`<section class="act">` siblings with CSS `display:none/block` toggled
+by tab buttons + URL hash. Tab nav at top of main content;
+`#actN` controls initial tab + supports deep-linking via
+`history.replaceState`. L7 findings repositioned from above-Act-0 to
+inside Act 1 ("is it alive?") since backward-looking structural reads
+belong with measurement, not as a banner.
 
-- Working code today; refactor carries bug risk with no offsetting payoff.
-- Navigability isn't critical for friends-tier audience.
-- Unit-testability of panels is deferred regardless (Task #10).
+### v0.3.2 / v0.3.3 / v0.3.4 — `effective_completion_date`
 
-Revisit when there's a concrete reason: a specific panel needs frequent
-edits, a contributor struggles to navigate, or refactor work is scheduled
-against a stable v0.1 baseline to regression-test against.
+`projects.effective_completion_date` records latest activity across ALL
+revisions (any source_doc), not just RESEARCH_PLAN. Trend-panel SQL uses
+`COALESCE(p.effective_completion_date, p.completion_date)` so in-flight
+April work surfaces without a closing RESEARCH_PLAN revision. v0.3.4
+hotfix: `populate_projects` rewritten with named-columns INSERT after
+the v0.3.2 schema addition exposed the positional-placeholder column-
+count crash. v0.3.12 (this release) extends the rule to all 11 INSERTs
+in `warehouse.py`.
+
+### v0.3.5 / v0.3.6 — symmetric panels + visible time axes
+
+Positive-result panel mirrors negative-result panel (Monthly /
+Per-project toggle, click-to-drill, claim_type tag distinguishing
+mechanistic from predictive). Discoveries drawer redesigned as a
+sortable+filterable table with a per-project cap of 20 (was: top-20
+total, alphabetically-first project ate every slot). All cumulative-
+trend chart x-axes use explicit `tickmode:'array'` with monthly tickvals
+(was: Plotly auto-tick chose weekly ticks and never labeled "Apr 2026"
+on a 3-month range, making April datapoints look unanchored).
+
+### v0.3.7 — drawer table column widths
+
+`table-layout:fixed` + explicit `<colgroup>` widths (project 14% /
+source 16% / claim 38% / quote 32%) on the discoveries-drawer table.
+Pre-fix: longest cell determined column width and the verbatim-quote
+column bled off the panel right edge.
+
+### v0.3.8 — Untracked-projects panel + persistent-cache CLI
+
+Act-3 panel surfaces projects with extracted conclusions but no
+Revision History (NULL `effective_completion_date` AND NULL
+`completion_date`). Surface-only design — atlas does NOT silently fall
+back to `last_touched`, which would conflate filesystem mtimes with
+intentional research dates and lose the diagnostic. Two new CLI flags:
+
+- `--cache-path PATH` overrides the default
+  `outputs_root/extraction_cache.duckdb`.
+- `--seed-cache-from PATH` copies a prior cache into the destination
+  before extraction. Refuses to overwrite an existing destination.
+
+### v0.3.9 — section chunking
+
+`engine/chunking.py` three-tier boundary cascade
+(subheading → paragraph → character) with default 12K-char threshold,
+no overlap. `UniversalExtractor.extract` refactored: `_extract_chunk()`
+shares cache/LLM/retry/parse logic between unchunked and chunked
+sections; section-level mention dedup by
+`(entity_kind, canonical_id, surface_form)`.
+
+**Cache-preserving design** — chunked sections get
+`sha256(content + f"|chunk={i}/{N}")` keys, but unchunked sections
+(`chunk_id=None`) keep the byte-identical pre-v0.3.9 cache key. Every
+v0.1.x – v0.3.7 cache row stays valid. Live IBD validation: 8
+previously-truncated sections re-extracted across 41 chunks (one
+section into 15), zero `finish_reason='length'`.
+
+### v0.3.10 — Project × database matrix
+
+Act-2 heatmap of database mentions per project. Both axes sorted by
+total mention count descending. White → light-green → dark-green
+colorscale; click row label → opens project drawer. Reads
+`entity_mentions` directly; no schema changes.
+
+### v0.3.11 — Sidebar nav fixes
+
+Three independent bugs in the sidebar-link click flow:
+
+1. `activateFromHash` fell back to act0 on non-act hashes — fixed to
+   walk up to enclosing `section.act`.
+2. IntersectionObserver unconditionally closed manually-opened
+   sidebar sections on cross-act scroll — fixed to additive open
+   (`if !s.open then s.open = true`); never closes.
+3. Anchor jumps landed under the sticky tab-nav — fixed via
+   `html { scroll-padding-top:5rem }` plus explicit
+   `requestAnimationFrame` + `scrollIntoView` from the click handler.
+
+### v0.3.12 — Release-candidate hardening
+
+All 11 positional INSERTs in `warehouse.py` rewritten with named
+columns. Round-trip regression test added for `populate_revisions`
+mirroring the v0.3.4 test for `populate_projects`. Repo went public
+2026-05-05; install instructions simplified to a single-line
+`pipx install git+https://...` (was: gh / SSH / PAT branches).
+CHANGELOG rebuilt from v0.2.0 → v0.3.12 (was stuck at v0.1.12).
+This LAYOUT.md fully rewritten.
 
 ## CLI structure
 
 ### Entry point
 
-```
+```toml
 [project.scripts]
 beril-atlas = "beril_atlas.cli:main"
 ```
@@ -184,89 +277,86 @@ beril-atlas = "beril_atlas.cli:main"
 beril-atlas --help
 beril-atlas --version
 
-beril-atlas install-skill <BERIL_ROOT>        # copy skill/ from package_data to <BERIL>/.claude/skills/beril-atlas/
-                                              # . is valid for "current dir is BERIL_ROOT"
-beril-atlas install-skill --force             # overwrite existing, preserving vocab-local/ and state/
+beril-atlas install-skill <BERIL_ROOT>     # copy skills/*/ from package_data
+                                           # to <BERIL>/.claude/skills/<name>/
+                                           # `.` means cwd is BERIL_ROOT
+beril-atlas install-skill --force          # overwrite existing, preserving
+                                           # vocab-local/ and state/
 
-beril-atlas configure                         # interactive wizard — provider, env vars, smoke test
-beril-atlas configure --noninteractive \      # scriptable path
-    --provider cborg --model claude-sonnet-4
+beril-atlas configure                      # interactive wizard — provider,
+                                           # env vars, smoke test
+beril-atlas configure --noninteractive \   # scriptable path
+    --provider cborg --model anthropic/claude-sonnet
 
-beril-atlas scan [--beril-root <path>] \      # primary user command
+beril-atlas scan [--beril-root <path>] \   # primary user command
     [--extract] [--projects-root <path>] \
-    [--outputs-root <path>] [--vocab-local <path>]
+    [--outputs-root <path>] [--vocab-local <path>] \
+    [--cache-path <path>] \                # v0.3.8: override cache location
+    [--seed-cache-from <path>] \           # v0.3.8: warm-start a fresh cache
+    [--extract-limit <N>] \
+    [--allow-contamination]
 
-beril-atlas metrics --warehouse <path> \      # standalone re-run of metrics against existing warehouse
+beril-atlas metrics --warehouse <path> \   # standalone re-run vs existing warehouse
     --outputs <dir>
 
-beril-atlas render --warehouse <path> \       # standalone re-run of dashboard
-    --outputs <dir> [--vendor-plotly <path>]
+beril-atlas render --warehouse <path> \    # standalone re-run of dashboard
+    --metrics-dir <dir> --output <html-path>
 
-beril-atlas fixture-regen                     # maintainer-only — regenerates synthetic sample-output
-                                              # hidden from --help unless BERIL_ATLAS_DEV=1
+beril-atlas fixture-regen                  # maintainer-only — regenerates
+                                           # synthetic sample-output. Hidden
+                                           # from --help unless BERIL_ATLAS_DEV=1
 ```
 
 ### Each command's role
 
 | Subcommand | First-time install step | Per-scan | Maintainer-only |
 | --- | --- | --- | --- |
-| `install-skill` | ✓ (once per BERIL install) | — | — |
-| `configure` | ✓ (once per user per BERIL install) | — | — |
-| `scan` | — | ✓ | — |
+| `install-skill` | yes (once per BERIL install) | — | — |
+| `configure` | yes (once per user per BERIL install) | — | — |
+| `scan` | — | yes | — |
 | `metrics` | — | optional | — |
 | `render` | — | optional | — |
-| `fixture-regen` | — | — | ✓ |
+| `fixture-regen` | — | — | yes |
 
 ### Exit codes
 
 - `0` — success
 - `1` — user error (bad args, missing config)
-- `2` — runtime error (LLM failure, corpus read failure, contamination assertion failed)
-- `3` — configuration error (`beril-atlas configure` never run, or credentials invalid)
+- `2` — runtime error (LLM failure, corpus read failure, contamination
+  assertion failed)
+- `3` — configuration error (`beril-atlas configure` never run, or
+  credentials invalid)
 
-Fail-loud: every error path emits a diagnostic message with enough detail to
-retry or file a bug. No silent fallbacks.
+Fail-loud: every error path emits a diagnostic message with enough
+detail to retry or file a bug. No silent fallbacks.
 
 ## Path discovery
 
-User confirmed 2026-04-24: **BERIL always has `.env` at its home directory.**
-This simplifies discovery to a single problem: find BERIL_ROOT.
+User confirmed 2026-04-24: **BERIL always has `.env` at its home
+directory.** This simplifies discovery to a single problem: find
+`BERIL_ROOT`.
 
 ### BERIL_ROOT resolution (in `discovery.py`)
 
 Resolution order (first match wins, fail loud if none):
 
-1. `--beril-root <path>` CLI flag (explicit user intent — highest priority)
-2. `BERIL_ROOT` environment variable
-3. **Walk up from cwd** looking for a directory that contains ALL required
-   markers:
+1. `--beril-root <path>` CLI flag (explicit user intent — highest priority).
+2. `BERIL_ROOT` environment variable.
+3. **Walk up from cwd** looking for a directory that contains ALL
+   required markers:
    - `.env` file at root
    - `.claude/skills/` directory at root
-   - At least one BERIL-core skill directory: `.claude/skills/submit/` OR
-     `.claude/skills/berdl/` OR `.claude/skills/suggest-research/` (these
-     three have been stable since the 2026-04-17 fork point).
+   - At least one BERIL-core skill directory: `.claude/skills/submit/`
+     OR `.claude/skills/berdl/` OR `.claude/skills/suggest-research/`.
 
-   **Tiebreaker signals** (not required, boost confidence for diagnostics):
+   **Tiebreaker signals** (not required, boost confidence for
+   diagnostics):
    - Directory name matches `/BERIL[-_]/i` (case-insensitive substring).
    - `.env.example` contains `KBASE_AUTH_TOKEN`.
    - `DIRECTORY_STRUCTURE.md` exists at root.
 
 4. If no match after walking to filesystem root: `exit 1` with a message
-   that names WHICH required marker failed first (so the user can diagnose):
-   ```
-   Error: could not find BERIL_ROOT.
-     - Pass --beril-root <path>, or
-     - Set BERIL_ROOT environment variable, or
-     - Run beril-atlas from inside a BERIL checkout.
-
-   BERIL detection failed because:
-     [ ] .env file (not found at any parent)
-     [x] .claude/skills/ directory (found at /Users/you/src/foo)
-     [ ] BERIL-core skill (none of submit/, berdl/, suggest-research/)
-
-   If you believe you're in a BERIL checkout, pass --beril-root explicitly
-   and file an issue at github.com/ArkinLaboratory/beril-atlas-skill/issues.
-   ```
+   that names which required marker failed first.
 
 ### Derived paths (all relative to BERIL_ROOT)
 
@@ -280,33 +370,35 @@ Resolution order (first match wins, fail loud if none):
 ### Config path (user-level, not BERIL-scoped)
 
 `~/.beril-atlas/config.yaml` (owned by `configure`, read by `scan`).
-Separate from BERIL_ROOT because:
-- One user may have multiple BERIL installs, all sharing provider + model config
-- Credentials references (env var names, not values) don't belong in the repo tree
+Separate from `BERIL_ROOT` because:
+
+- One user may have multiple BERIL installs sharing provider + model
+  config.
+- Credentials references (env var names, not values) don't belong in
+  the repo tree.
 
 ### Shipped skill dir inside installed package
 
-Accessed via `importlib.resources` (portable across sdist/wheel/editable/zipped):
+Accessed via `importlib.resources` (portable across
+sdist/wheel/editable/zipped):
 
 ```python
 from importlib import resources
-skill_src = resources.files("beril_atlas") / "skill"
-# Returns a Traversable — iterate or read via as_file() for real Path
+skill_src = resources.files("beril_atlas") / "skills" / "beril-atlas"
 ```
 
-`install-skill` copies contents of `skill_src` into
-`BERIL_ROOT / ".claude/skills/beril-atlas/"`, preserving any pre-existing
-`vocab-local/`, `state/`, `contrib/` subdirectories (see overlay mechanics below).
+`install-skill` walks `src/beril_atlas/skills/` and for each subfolder
+copies into `BERIL_ROOT / ".claude/skills/<subfolder>/"`, preserving any
+pre-existing `vocab-local/`, `state/`, `contrib/` subdirectories.
 
-## vocab overlay mechanics (option d, confirmed)
+## vocab overlay mechanics
 
 ### Layout at an installed skill dir
 
 ```
 <BERIL_ROOT>/.claude/skills/beril-atlas/
 ├── SKILL.md                        # shipped, overwritten on install-skill --force
-├── commands/                       # shipped
-├── prompts/                        # shipped (ship-only, no overlay per Adam 2026-04-24)
+├── prompts/                        # shipped (ship-only, no overlay)
 ├── references/                     # shipped
 ├── vocab-shipped/                  # shipped, READ-ONLY from user's POV
 │   ├── databases.v1.yaml
@@ -321,9 +413,8 @@ skill_src = resources.files("beril_atlas") / "skill"
 ### Load order at runtime (in `engine/vocab.py`)
 
 ```python
-def load_vocab(skill_dir: Path, kind: str) -> VocabTable:
-    shipped = _load_yaml(skill_dir / "vocab-shipped" / f"{kind}.v1.yaml")
-    local_path = skill_dir / "vocab-local" / f"{kind}.local.yaml"
+def load_vocab_with_overlay(shipped_path, local_path, kind):
+    shipped = _load_yaml(shipped_path)
     if local_path.exists():
         local = _load_yaml(local_path)
         return merge(shipped, local, mode="overlay-wins")
@@ -332,95 +423,83 @@ def load_vocab(skill_dir: Path, kind: str) -> VocabTable:
 
 ### Merge semantics
 
-- **Canonical term additions** from vocab-local: appended, treated as additional
-  canonical entries. No conflict possible.
-- **Synonym additions** for an existing canonical term: merged into that
-  canonical's synonym list. Duplicate synonyms silently deduped.
-- **Canonical term override** (user vocab-local defines a canonical with the same
-  key as vocab-shipped): local wins, logged to stderr. This is a loud-overlay
-  scenario — user has chosen to redefine a shipped term.
-- **Deletion** of shipped entries via vocab-local: not supported v0.1. If users
-  ask for it we add a negative-override syntax.
+- **Canonical term additions** from vocab-local: appended, treated as
+  additional canonical entries.
+- **Synonym additions** for an existing canonical term: merged into
+  that canonical's synonym list. Duplicate synonyms silently deduped.
+- **Canonical term override** (user vocab-local defines a canonical
+  with the same key as vocab-shipped): local wins, logged to stderr.
+  Loud-overlay scenario.
+- **Deletion** of shipped entries via vocab-local: not supported in
+  v0.1 – v0.3. If users ask, add a negative-override syntax in v0.4.
 
 ### Leak-implication
 
-`vocab-local/*.local.yaml` is NEVER automatically synced to `contrib/`. To
-propose a term for upstream inclusion, user manually copies an entry to
-`contrib/vocab-promotions-<date>.yaml`. This keeps vocab-local purely private
-and makes the promotion action explicit.
+`vocab-local/*.local.yaml` is NEVER automatically synced to `contrib/`.
+To propose a term for upstream inclusion, user manually copies an
+entry to `contrib/vocab-promotions-<date>.yaml`. Keeps vocab-local
+purely private; promotion is explicit.
 
 ### install-skill preservation rules
 
 `beril-atlas install-skill <BERIL_ROOT>`:
-- Overwrites: `SKILL.md`, `commands/`, `prompts/`, `references/`, `vocab-shipped/`.
+
+- Overwrites: `SKILL.md`, `prompts/`, `references/`, `vocab-shipped/`.
 - Preserves: `vocab-local/`, `state/`, `contrib/` (never touched).
 - Creates if missing: `vocab-local/` with a README.md explaining usage;
   empty `state/`; empty `contrib/`.
-- `--force` bypasses confirmation prompts (for scripted installs) but does NOT
-  remove `vocab-local/state/contrib/`. Those are never destroyed by this command.
+- `--force` bypasses confirmation prompts (for scripted installs) but
+  does NOT remove `vocab-local/state/contrib/`.
+
+## Cache-key shape (v0.3.9-aware)
+
+Cache key derivation in `engine/extraction_cache.py`:
+
+```
+content_hash = sha256(content)                                # unchunked sections
+content_hash = sha256(content + f"|chunk={i}/{N}")            # chunked sections
+cache_key    = sha256(content_hash + "|" + prompt_version
+                                  + "|" + vocab_version
+                                  + "|" + model_id)
+```
+
+The `chunk_id=None` branch is the cache-preservation lever: every
+unchunked section keeps its byte-identical pre-v0.3.9 cache key, so
+upgrade from v0.3.7 → v0.3.12 invalidates zero rows for the ~99% of
+sections that fit under the chunking threshold. See
+`feedback_cache_key_chunked_only_when_chunked.md` (memory) for the
+generalizable pattern.
 
 ## Cross-platform considerations
 
-Already in pyproject.toml: Python 3.10+, Operating System :: OS Independent.
-Per-file hygiene required:
+Python 3.10+, OS-independent. Per-file hygiene:
 
 - All path manipulation via `pathlib.Path`, no string concatenation.
 - `Path.home()` for user-home references.
-- `.gitattributes` at repo root:
-  ```
-  * text=auto
-  *.sh  text eol=lf
-  *.ps1 text eol=crlf
-  ```
+- `.gitattributes` enforces text=auto + LF on shell scripts, CRLF on
+  PowerShell.
 - No shell scripts in install/configure paths — CLI subcommands are the
   cross-platform installer/configurator.
-- Windows PATH concern for pipx shims: `pipx ensurepath` output must be
-  documented in the install instructions (Task #9).
+- Windows PATH for pipx shims: documented in install instructions
+  (`python -m pipx ensurepath`).
 
-## vocab-local scope (resolved 2026-04-24)
+## vocab-local scope
 
 **Default: per-install.** Lives inside the skill dir at
 `<BERIL_ROOT>/.claude/skills/beril-atlas/vocab-local/`. Each BERIL
-deployment curates independently.
-
-Rationale: handles three cases correctly that per-user doesn't —
-(a) multi-install machines (dev/prod/testing checkouts); (b) scope-specific
-curation (PROTECT-focused vs general-KBase); (c) installs with different
+deployment curates independently. Handles three cases per-user
+wouldn't: multi-install machines (dev/prod/testing), scope-specific
+curation (PROTECT-focused vs general-KBase), installs with different
 sync coverage.
 
-**Escape hatch for per-user scope.** If a user has one BERIL install and
-wants vocab-local shared across machines (e.g., home laptop + work laptop),
-they can set in BERIL's `.env`:
+**Escape hatch for per-user scope.** If a user has one BERIL install
+and wants vocab-local shared across machines, they can set in
+`BERIL_ROOT/.env`:
 
 ```
 BERIL_ATLAS_VOCAB_LOCAL_PATH=~/.beril-atlas/vocab-local/
 ```
 
-Runtime checks this env var first; falls back to skill-dir-local if unset.
-Zero additional complexity for default users; flexibility for advanced
-cases. If friends-install pattern ends up being one-per-user anyway, flip
-the default in v0.2 with minimal migration friction.
-
-## Deliverables this document blocks
-
-- **Task #4** (/beril-atlas-configure slash command spec): now unblocked. Will
-  reference `commands/configure.py` from this layout.
-- **Task #6** (path discovery rework): references `discovery.py` in this layout.
-- **Task #10** (test split): references `tests/unit/` and `tests/integration/`
-  directory decisions.
-- **Task #9** (repo init): uses the full tree defined above as initial commit.
-
-## Questions for Adam review
-
-1. **Render split** (`atlas_render.py` → `render/{html,panels,network,assets}.py`).
-   This is meaningful refactor in the middle of packaging work. Safe alternative:
-   keep as single `render.py` for v0.1, split later. Preference?
-2. **CLI subcommand names OK?** `install-skill`, `configure`, `scan`, `metrics`,
-   `render`, `fixture-regen`. Alternatives: `setup`, `init`, `deploy`, etc.
-3. **Exit code scheme** — 0/1/2/3 sufficient, or do you want a finer split?
-4. **BERIL_ROOT discovery markers** — I listed three options:
-   `DIRECTORY_STRUCTURE.md`, `.claude/skills/berdl/`, `.claude/skills/suggest-research/`.
-   Any of these risk false positives (a non-BERIL dir that happens to have these)?
-   Is there a single canonical BERIL marker I should use instead?
-5. **vocab-local per-install vs per-user** — recommending per-install. Push
-   back if you'd rather per-user.
+Runtime checks the env var first; falls back to skill-dir-local if
+unset. Zero additional complexity for default users; flexibility for
+advanced cases.

@@ -32,7 +32,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "beril-atlas-skill"
-version = "0.3.11"
+version = "0.3.12"
 description = "BERIL Atlas — read-only retrofit analyzer for a local BERIL deployment, distributed as a Claude Code skill + Python engine."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -66,8 +66,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
-    # Prevents accidental `twine upload` while repo is private.
-    # Remove this classifier when going public on PyPI.
+    # Prevents accidental `twine upload` to PyPI. The GitHub repo went
+    # public 2026-05-05, but we're not yet shipping to PyPI — install via
+    # `pipx install git+https://github.com/ArkinLaboratory/beril-atlas-skill.git`.
+    # Remove this classifier when ready to publish on PyPI.
     "Private :: Do Not Upload",
 ]
 

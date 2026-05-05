@@ -179,6 +179,65 @@ def test_render_smoke_with_v032_panels(tmp_path):
 # round-trip so future column additions to the projects table don't
 # silently break populate_projects.
 
+def test_populate_project_revisions_round_trips_against_current_schema(tmp_path):
+    """v0.3.12: project_revisions populator was rewritten to use named
+    columns. This test mirrors the v0.3.4 round-trip test for
+    populate_projects — exercises the full populate path so a future
+    schema change doesn't silently break the populator at runtime.
+
+    Caught 2026-05-05 in adversarial-review pass A: warehouse.py:567 had
+    `INSERT INTO project_revisions VALUES (?,?,?,?,?,?,?,?,?)` — the
+    exact pattern that caused v0.3.2's column-count mismatch crash on
+    Adam's hub. Fix: named columns.
+    """
+    from beril_atlas.engine import revisions as r_mod
+    from beril_atlas.engine.warehouse import (
+        create_schema, populate_projects, populate_revisions,
+    )
+    from beril_atlas.engine import projects as p_mod
+    db = duckdb.connect(str(tmp_path / "atlas.duckdb"))
+    create_schema(db)
+    now = dt.datetime.utcnow()
+    pr = p_mod.Project(
+        project_id="p_round_trip",
+        root_path=tmp_path / "p_round_trip",
+        name="round trip test",
+        last_touched=now.timestamp(),
+        is_git_repo=False,
+        total_bytes=1234,
+        file_count=5,
+        has_notebooks=False,
+        notebook_count=0,
+        has_data_dir=False,
+        has_figures_dir=False,
+        has_references_md=True,
+        canonical_docs_present={"README": True},
+        file_type_counts={"md": 3},
+    )
+    populate_projects(db, [pr], now)
+
+    rev = r_mod.Revision(
+        project_id="p_round_trip",
+        source_doc="RESEARCH_PLAN",
+        version_label="v1",
+        version_date="2026-04-25",
+        date_precision="day",
+        change_description="initial plan",
+        source_quote="v1 (2026-04-25)",
+        line_offset=0,
+    )
+    populate_revisions(db, [rev], now)
+
+    n = db.execute("SELECT COUNT(*) FROM project_revisions").fetchone()[0]
+    assert n == 1, "populate_project_revisions must succeed against current schema"
+    row = db.execute(
+        "SELECT project_id, source_doc, version_label, version_date "
+        "FROM project_revisions"
+    ).fetchone()
+    assert row == ("p_round_trip", "RESEARCH_PLAN", "v1", dt.date(2026, 4, 25))
+    db.close()
+
+
 def test_populate_projects_round_trips_against_current_schema(tmp_path):
     from beril_atlas.engine import projects as p_mod
     from beril_atlas.engine.warehouse import create_schema, populate_projects
@@ -421,7 +480,12 @@ def test_v036_discoveries_drawer_per_project_cap():
     bucket = fetch_claims_by_month_and_type(db, per_project_cap=20)
     db.close()
 
-    month_label = today.strftime("%Y-%m")
+    # v0.3.12 fix: use the revision_date's month, NOT today's month.
+    # Pre-fix: month_label = today.strftime("%Y-%m"), which broke whenever
+    # today was within 10 days of a month boundary (revisions land in the
+    # PREVIOUS month, samples land in PREVIOUS month bucket, lookup misses).
+    revision_date = today - dt.timedelta(days=10)
+    month_label = revision_date.strftime("%Y-%m")
     samples = bucket.get(f"{month_label}|descriptive", [])
     pids_in_bucket = {s["project_id"] for s in samples}
     # Every project must be represented — that's the property the user cares about.

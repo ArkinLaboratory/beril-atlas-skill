@@ -563,8 +563,18 @@ def populate_revisions(con: duckdb.DuckDBPyConnection,
             observed_at,
         ))
     if rows:
+        # v0.3.12: named columns to prevent the v0.3.2-class column-count
+        # mismatch bug. If a future schema change adds a project_revisions
+        # column, this INSERT keeps working — it just doesn't populate the
+        # new column (which can be filled by a later enrich pass). Bare
+        # positional placeholders would crash after the DELETE wiped the
+        # table; see feedback_named_columns_in_inserts.md.
         con.executemany(
-            "INSERT INTO project_revisions VALUES (?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO project_revisions
+                 (revision_id, project_id, source_doc, version_label,
+                  version_date, date_precision, change_description,
+                  source_quote, observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             rows)
 
     # Purge orphan post-hoc classifier rows. revision_kinds may not exist
@@ -608,7 +618,10 @@ def populate_authors(con: duckdb.DuckDBPyConnection,
     ]
     if author_rows:
         con.executemany(
-            "INSERT INTO authors VALUES (?,?,?,?,?,?)",
+            """INSERT INTO authors
+                 (author_id, orcid_id, canonical_name, affiliation,
+                  first_seen_in_project_id, observed_at)
+               VALUES (?,?,?,?,?,?)""",
             author_rows)
 
     join_rows = [
@@ -622,7 +635,10 @@ def populate_authors(con: duckdb.DuckDBPyConnection,
     ]
     if join_rows:
         con.executemany(
-            "INSERT INTO project_authors VALUES (?,?,?,?,?,?)",
+            """INSERT INTO project_authors
+                 (project_id, author_id, role, source_doc,
+                  source_quote, observed_at)
+               VALUES (?,?,?,?,?,?)""",
             join_rows)
 
     # v0.1.10: consolidate name-only authors into ORCID-keyed authors when
@@ -685,7 +701,10 @@ def populate_sections(con: duckdb.DuckDBPyConnection,
         ))
     if rows:
         con.executemany(
-            "INSERT INTO sections VALUES (?,?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO sections
+                 (section_id, project_id, source_doc, h1_text, h2_text,
+                  content, start_offset, end_offset, byte_size, observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             rows)
 
 
@@ -716,7 +735,12 @@ def populate_notebooks(con: duckdb.DuckDBPyConnection,
         ))
     if rows:
         con.executemany(
-            "INSERT INTO notebooks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO notebooks
+                 (notebook_id, project_id, notebook_number, notebook_suffix,
+                  filename, relative_path, title_from_first_md_cell,
+                  goal_phrase, total_cells, markdown_cells, code_cells,
+                  raw_cells, byte_size, has_outputs, first_mtime, observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             rows)
 
 
@@ -740,7 +764,11 @@ def populate_reuse_edges(con: duckdb.DuckDBPyConnection,
         ))
     if rows:
         con.executemany(
-            "INSERT INTO reuse_edges VALUES (?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO reuse_edges
+                 (edge_id, src_project_id, dst_project_id, confidence_tier,
+                  source_doc, source_section, source_quote, occurrence_count,
+                  observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             rows)
 
 
@@ -787,7 +815,12 @@ def populate_mentions(con: duckdb.DuckDBPyConnection,
         ))
     if rows:
         con.executemany(
-            "INSERT INTO entity_mentions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO entity_mentions
+                 (mention_id, project_id, section_id, source_doc,
+                  source_section, entity_kind, canonical_id, surface_form,
+                  source_quote, confidence, extraction_source, prompt_version,
+                  vocab_version, model_id, extra_json, observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             rows)
 
 
@@ -816,7 +849,16 @@ def populate_sophistication(con: duckdb.DuckDBPyConnection,
         ))
     if rows:
         con.executemany(
-            "INSERT INTO sophistication_composite VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO sophistication_composite
+                 (project_id, depth_score, breadth_score, influence_score,
+                  integration_score, self_follow_on_score, too_early,
+                  partial_phase_2b, revision_count, notebook_count,
+                  canonical_doc_bytes, days_active, conclusion_count,
+                  distinct_organism_count, distinct_method_count,
+                  distinct_database_count, in_degree, two_hop_in_degree,
+                  out_degree, distinct_prior_authors, cross_author_downstream,
+                  self_in_degree, self_out_degree, observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             rows)
 
 
@@ -876,11 +918,24 @@ def populate_research_lines(con: duckdb.DuckDBPyConnection,
             ))
     if line_rows:
         con.executemany(
-            "INSERT INTO research_lines VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO research_lines
+                 (line_id, line_name, member_count, member_ids,
+                  distinct_author_ids, distinct_author_count,
+                  earliest_start, latest_completion,
+                  cross_author_handoffs, self_iterations,
+                  citation_edge_count, topic_edge_count, sub_cluster_count,
+                  depth_mean, breadth_mean, influence_mean,
+                  integration_mean, self_follow_on_mean,
+                  total_revisions, total_conclusions, total_notebooks,
+                  observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             line_rows)
     if sub_rows:
         con.executemany(
-            "INSERT INTO research_line_subclusters VALUES (?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO research_line_subclusters
+                 (sub_id, line_id, sub_index, member_count, member_ids,
+                  top_organisms, top_methods, top_databases, observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             sub_rows)
 
 
@@ -924,7 +979,13 @@ def populate_drift_candidates(con: duckdb.DuckDBPyConnection,
         ))
     if rows:
         con.executemany(
-            "INSERT INTO drift_candidates VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            """INSERT INTO drift_candidates
+                 (drift_id, project_id, section_id, source_doc,
+                  source_section, entity_kind, surface_form, source_quote,
+                  llm_proposed_canonical, llm_suggested_aliases, llm_notes,
+                  llm_decision, vocab_version, prompt_version, model_id,
+                  observed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             rows)
 
 

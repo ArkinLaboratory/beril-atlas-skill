@@ -28,7 +28,7 @@ If the command is not found, tell the user:
 
 > The `beril-atlas` package isn't on your PATH. Install it with:
 >
->     pipx install git+ssh://git@github.com/ArkinLaboratory/beril-atlas-skill.git
+>     pipx install git+https://github.com/ArkinLaboratory/beril-atlas-skill.git
 >
 > Then re-run `/beril-atlas-update`.
 
@@ -58,6 +58,7 @@ Run in a Bash block (these are three separate commands; run them sequentially
 and stop on the first non-zero exit):
 
     OUT=~/.beril-atlas/latest
+    mkdir -p "$OUT"
     cd <beril_root from Step 2>
 
     beril-atlas scan --projects-root projects --outputs-root "$OUT" --extract

@@ -20,7 +20,7 @@ If the command is not found, tell the user:
 
 > The `beril-atlas` package isn't on your PATH. Install it with:
 >
->     pipx install git+ssh://git@github.com/ArkinLaboratory/beril-atlas-skill.git
+>     pipx install git+https://github.com/ArkinLaboratory/beril-atlas-skill.git
 >
 > (Windows: `python -m pip install --user pipx; python -m pipx ensurepath` first.)
 > Then re-run `/beril-atlas-configure`.

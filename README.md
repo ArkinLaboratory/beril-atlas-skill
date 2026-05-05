@@ -6,59 +6,39 @@ skill pack, project corpus, and workspace memory; produces tabular exports,
 an interactive HTML dashboard, drift-review markdown, and a recommendations
 writeup grounded in the warehouse rows.
 
-**Status:** v0.1, private alpha.
+**Status:** v0.3.12 (release candidate). Public repo. See
+[`CHANGELOG.md`](CHANGELOG.md) for the full history. One of four
+BERIL plug-in skills — see also
+[`beril-adversarial-skill`](https://github.com/ArkinLaboratory/beril-adversarial-skill),
+[`beril-paper-writer-skill`](https://github.com/ArkinLaboratory/beril-paper-writer-skill),
+and [`beril-presentation-maker-skill`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill).
 
 ## Install
 
-Pick the install URL that matches your GitHub auth setup. Run
-`gh auth status` first to check what's available — both options
-work; pick the one that doesn't make you set up a new credential.
-
-**Option 1 — HTTPS via `gh` credential helper (preferred if `gh` is
-authenticated).** Works on any environment where `gh auth login` has
-been run and git's credential helper is wired to `gh` (the default
-after `gh auth login`). No PAT in the URL, no SSH key needed:
+Repo is public; no auth required.
 
 ```bash
 pipx install git+https://github.com/ArkinLaboratory/beril-atlas-skill.git
 ```
 
-If you don't have `gh`: `brew install gh` (macOS) or
-`conda install -c conda-forge gh` (other), then `gh auth login`.
+To upgrade in place:
 
-**Option 2 — SSH (preferred if you already use SSH keys for git):**
+```bash
+pipx install --force git+https://github.com/ArkinLaboratory/beril-atlas-skill.git
+```
+
+**Prerequisites.** `pipx` itself; install via `brew install pipx`
+(macOS), `conda install -c conda-forge pipx` (any), or
+`python -m pip install --user pipx; python -m pipx ensurepath`
+(Windows).
+
+**SSH alternative** (if you prefer SSH over HTTPS for any reason):
 
 ```bash
 pipx install git+ssh://git@github.com/ArkinLaboratory/beril-atlas-skill.git
 ```
 
-Note the explicit `git@` — `git+ssh://` URLs require it for GitHub
-(without it, ssh tries your local username and fails).
-
-If you get `Permission denied (publickey)` and your SSH key has a
-passphrase, load the agent first:
-
-```bash
-ssh-add ~/.ssh/id_ed25519
-```
-
-Then retry the install.
-
-**Option 3 — HTTPS with a personal access token in the URL** (only if
-you can't use the gh helper or SSH):
-
-```bash
-set +o history                                # don't log the PAT in shell history
-GH_PAT=$(cat ~/.gh_pat)                       # or paste your PAT here
-pipx install "git+https://${GH_PAT}@github.com/ArkinLaboratory/beril-atlas-skill.git"
-unset GH_PAT
-set -o history
-```
-
-The PAT needs `repo` scope. Generate at
-GitHub → Settings → Developer settings → Personal access tokens.
-
-**Windows**: prerequisite is `python -m pip install --user pipx; python -m pipx ensurepath`.
+Note the explicit `git@` — `git+ssh://` URLs require it for GitHub.
 
 ## Quickstart
 
@@ -149,20 +129,19 @@ points you at the rebuilt dashboard.
 ### C. Archival snapshot — when you want to keep history
 
 You want an immutable copy of the dashboard as of today (e.g., to compare
-"April" vs "August" portfolio state). Use a timestamped directory and
-manually seed the cache from `latest`:
+"April" vs "August" portfolio state). v0.3.8 introduced two flags that make
+this trivial without manual file copies:
 
 ```bash
 cd <BERIL_ROOT>
 TS=$(date -u +"%Y%m%d-%H%M%SZ")
 OUT=~/.beril-atlas/runs/$TS
-mkdir -p "$OUT"
 
-# Seed the cache so the snapshot scan is near-free.
-[ -f ~/.beril-atlas/latest/extraction_cache.duckdb ] && \
-  cp ~/.beril-atlas/latest/extraction_cache.duckdb "$OUT/"
-
-beril-atlas scan --projects-root projects --outputs-root "$OUT" --extract
+# --seed-cache-from copies a prior cache into the new outputs root before
+# extraction starts. Refuses to clobber an existing destination.
+beril-atlas scan \
+    --projects-root projects --outputs-root "$OUT" --extract \
+    --seed-cache-from ~/.beril-atlas/latest/extraction_cache.duckdb
 beril-atlas metrics --warehouse "$OUT/atlas.duckdb" --outputs "$OUT"
 beril-atlas render \
   --warehouse "$OUT/atlas.duckdb" \
@@ -170,9 +149,16 @@ beril-atlas render \
   --output "$OUT/dashboard.html"
 ```
 
-If you skip the `cp` step, the snapshot scan starts with an empty cache and
-pays the full bootstrap cost. A future release will add `--reuse-cache` /
-`--seed-cache-from` flags so the manual copy step goes away.
+Alternative: `--cache-path PATH` points at a stable cache file outside any
+particular `--outputs-root`. Useful if you want every snapshot run to read
++ write the same cache (no copy):
+
+```bash
+mkdir -p ~/.beril-atlas/cache
+beril-atlas scan \
+    --projects-root projects --outputs-root "$OUT" --extract \
+    --cache-path ~/.beril-atlas/cache/extraction_cache.duckdb
+```
 
 ### One more thing — cache key
 
@@ -236,9 +222,9 @@ In-skill (after `install-skill`):
 ## Troubleshooting
 
 **`pipx install` fails with `Permission denied (publickey)`**:
-You probably have a passphrase-protected SSH key not loaded in the
-agent. Run `ssh-add ~/.ssh/id_ed25519` (enter passphrase once), then
-retry. See SSH-agent notes in this section above.
+You used the SSH form but your SSH key isn't loaded in the agent.
+Either switch to the HTTPS form (no auth needed for this public repo)
+or run `ssh-add ~/.ssh/id_ed25519` first.
 
 **`beril-atlas` prints "could not find BERIL_ROOT"**:
 The CLI walks up from cwd looking for a directory with `.env`,

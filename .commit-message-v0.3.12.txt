@@ -1,0 +1,109 @@
+v0.3.12: release-candidate hardening + repo-public
+
+Bundled fixes from the four-pass adversarial finalization review
+(2026-05-05). Four memoryless review agents reviewed beril-atlas-skill
+in parallel — code, architectural docs, user docs, repo cleanliness —
+and produced a 24-finding triage list. This commit closes Tier 1.
+
+The four BERIL plug-in skill repos went public on 2026-05-05:
+- https://github.com/ArkinLaboratory/beril-atlas-skill
+- https://github.com/ArkinLaboratory/beril-adversarial-skill
+- https://github.com/ArkinLaboratory/beril-paper-writer-skill
+- https://github.com/ArkinLaboratory/beril-presentation-maker-skill
+
+Install instructions across all touched docs simplified to a single
+`pipx install git+https://...` line (was: gh credential helper / SSH /
+PAT branches for private-repo access).
+
+## Code changes
+
+**Named-columns INSERTs across all 11 populator sites in warehouse.py.**
+Pre-fix: positional `INSERT INTO t VALUES (?, ?, ...)` was the v0.3.2-
+class bug pattern that caused every scan's DELETE to wipe the table
+when a column was added without a synchronized populator update. Now
+each INSERT explicitly lists its columns in
+`projects, project_revisions, authors, project_authors, sections,
+notebooks, reuse_edges, entity_mentions, sophistication_composite,
+research_lines, research_line_subclusters, drift_candidates`. Future
+column additions can ship without breaking any populator.
+
+**Round-trip regression test for populate_revisions** mirroring the
+v0.3.4 test for populate_projects. Catches column-count mismatches at
+CI time, not runtime.
+
+**Test date-flake fix.** test_v036_discoveries_drawer_per_project_cap
+used `today.strftime("%Y-%m")` for the bucket lookup but seeded
+revisions at `today - 10 days`. The two would land in different month
+buckets whenever today was in the first 10 days of a month; today
+(2026-05-05) was the trigger. Fixed to use the actual revision_date's
+month.
+
+## Documentation changes
+
+**Phantom `/beril-atlas-scan` slash command** removed from CONFIGURE.md.
+The actual slash commands are `/beril-atlas`, `/beril-atlas-configure`,
+`/beril-atlas-update` — there is no `/beril-atlas-scan`. Users
+following the configure flow would have typed it and gotten silent
+no-op.
+
+**README.md** rewrite of the "Status" banner (v0.1 alpha → v0.3.12
+release candidate, public, with cross-links to sibling skills) and
+the install section (single HTTPS one-liner; SSH alternative;
+prerequisites box). Archival-snapshot workflow uses the new
+--seed-cache-from / --cache-path flags directly instead of telling
+users to `cp` the cache file.
+
+**CHANGELOG.md** rebuilt from v0.2.0 through v0.3.12 (was stuck at
+v0.1.12 since 2026-04-26). 14 new entries covering the entity-drawer
++ tabbed-dashboard + chunking + matrix + sidebar-nav arc.
+
+**LAYOUT.md** full rewrite to reflect v0.2.x + v0.3.x architectural
+shifts. Adds chunking.py to the engine tree. Updates render.py
+annotations to span v0.2 → v0.3.12. Adds a v0.2 → v0.3 evolution
+section. Removes the closed Q&A and the "deliverables this document
+blocks" section. Cache-key shape (v0.3.9-aware) explicitly documented.
+
+**CONFIGURE.md, CONTRIBUTION.md, and the three SKILL.md files**
+(beril-atlas, beril-atlas-configure, beril-atlas-update): SSH install
+URL updated to public HTTPS. beril-atlas-update SKILL adds
+`mkdir -p "$OUT"` defensively before the OUT= step.
+
+**PLUGIN_GUIDE_SKELETON.md** swapped `RELEASE_NOTES.md` references for
+`CHANGELOG.md` (RELEASE_NOTES.md doesn't exist).
+
+## Repo cleanliness
+
+- Removed tracked __pycache__/, .DS_Store, .pytest_cache/ artifacts
+  from prior commits. .gitignore already covered them; only the
+  historical-tracking residue remained.
+- Cleaned stale .commit-message-v0.3.6.txt through v0.3.9.txt
+  (one-shot files for already-merged releases).
+
+## pyproject.toml
+
+- Version bump 0.3.11 → 0.3.12.
+- Comment on the `Private :: Do Not Upload` classifier updated to
+  reflect that GitHub repo went public but PyPI publish is still
+  deferred. The classifier stays in place as a guard against
+  accidental `twine upload`.
+
+## Tests
+
+- 153/153 unit tests pass (was 152; added the populate_revisions
+  round-trip).
+- All four review agents' P0 findings closed:
+  - A-P1-6 (positional project_revisions INSERT): all 11 INSERTs fixed.
+  - C-P0-5 (phantom slash command): removed.
+  - B-P0-1, B-P0-2, B-P0-3 (README + LAYOUT staleness): full rewrites.
+  - B-P1-6 (CHANGELOG missing entries): rebuilt.
+  - D-P1, D-P2 (repo cruft): cleaned.
+  - C-P0-1 / P0-3 / P0-4 (user-doc cwd guidance, mkdir): fixed.
+- Three review findings demoted with rationale:
+  - A-P0-1 (post-hoc classifier silent failure): INVALIDATED on
+    verification. Errors ARE surfaced at three levels.
+  - A-P0-3 (dict.get null vs missing): demoted to P2 — agent admitted
+    "the code happens to work."
+
+Tier 2 findings (per-project parsing isolation, cache.close race,
+contamination assertion generator exhaustion, openai exception class
+instead of string-match) deferred to v0.3.13.

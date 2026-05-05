@@ -310,10 +310,11 @@ git push origin main --tags
 gh release create v0.2.0 --generate-notes
 ```
 
-No PyPI publish while repo is private. Users update via:
+No PyPI publish yet (the GitHub repo went public 2026-05-05; PyPI
+publish is a separate decision). Users update via:
 
 ```bash
-pipx upgrade beril-atlas-skill
+pipx install --force git+https://github.com/ArkinLaboratory/beril-atlas-skill.git
 cd <BERIL_ROOT>
 beril-atlas install-skill .          # re-copies new vocab-shipped/
 /beril-atlas-configure               # auto-re-verifies due to version marker
