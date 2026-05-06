@@ -858,6 +858,35 @@ Your `CBORG_API_KEY` in `BERIL_ROOT/.env` is invalid or unauthorized
 for the CBORG endpoint. Verify the key, then re-run
 `/beril-atlas-configure`.
 
+### `mark_configured` reports "BERIL_ATLAS_CONFIGURED_AT/_VERSION not found"
+
+Pre-v0.3.14 only: your `.env` has `ACTIVE_PROVIDER` + provider key set
+but the atlas marker stanza wasn't appended (e.g., from a partial prior
+setup, an externally-set `ACTIVE_PROVIDER`, or a manually-cleaned
+`.env`). The state machine correctly classifies as
+`keys-present-unverified` and the smoke test passes, but
+`mark_configured` was a regex-replacer-only and errored when the
+marker LINES were physically absent.
+
+**v0.3.14+**: the upsert appends missing marker lines automatically
+(with a one-time self-documenting comment header if no atlas template
+block exists). No user action required; just run
+`beril-atlas configure` and it stamps cleanly.
+
+**Workaround on older versions**:
+
+```bash
+cd <BERIL_ROOT>
+cat >> .env <<'EOF'
+
+# BERIL Atlas marker — managed by `beril-atlas configure`
+BERIL_ATLAS_CONFIGURED_AT=
+BERIL_ATLAS_CONFIGURED_VERSION=
+EOF
+beril-atlas configure          # should now smoke + stamp cleanly
+beril-atlas install-skill .    # should now succeed
+```
+
 ### Smoke test fails with `error_class: not_found`
 
 CBORG endpoint URL is wrong. The default is

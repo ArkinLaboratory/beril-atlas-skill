@@ -2,6 +2,62 @@
 
 All shipped versions of `beril-atlas-skill`. Latest first.
 
+## v0.3.14 — 2026-05-05 (mark_configured idempotency hotfix)
+
+Caught 2026-05-05 on Adam's `spike/beril-extended` hub. `.env` had
+`ACTIVE_PROVIDER=cborg` + `CBORG_API_KEY=<real>` (from a partial prior
+setup that left `ACTIVE_PROVIDER` set externally) but no
+`BERIL_ATLAS_CONFIGURED_AT=` / `BERIL_ATLAS_CONFIGURED_VERSION=` lines.
+The configure flow detected this state correctly as
+`keys-present-unverified` and ran the smoke test (passed); the
+follow-on mark step then failed with
+`Error: BERIL_ATLAS_CONFIGURED_AT/BERIL_ATLAS_CONFIGURED_VERSION not
+found ...`. Root cause: `mark_configured._update_line` was a regex
+*replacer*, not an upsert — when the line was physically absent from
+`.env`, it errored instead of appending.
+
+**Fix.** `mark_configured._upsert_marker_lines` is the new canonical
+entry point: replace-if-present, append-if-absent. When the .env has
+no atlas template block, a one-time self-documenting comment header
+is added before the appended marker lines so the stanza is readable
+in raw text. Idempotent across repeated invocations (no duplicate
+lines, no duplicate headers).
+
+The state machine in `config_status` is unchanged — its classification
+of the user's situation as `keys-present-unverified` was correct; the
+bug was in the mark step's assumption about file shape. Future
+analogous shapes (additional marker lines, third-party
+`ACTIVE_PROVIDER` assignment, partial template cleanup by the user)
+all flow through the same upsert path.
+
+**Tests** (6 new, 159/159 pass):
+- `test_appends_marker_lines_when_absent` — exact reproducer from
+  Adam's hub.
+- `test_appends_with_header_when_no_atlas_block_present` — header
+  precedes appended lines.
+- `test_replaces_existing_lines_when_present` — pre-v0.3.14 behavior
+  preserved when lines exist.
+- `test_only_one_marker_line_present_appends_the_other` — partial-
+  template edge case.
+- `test_idempotent_double_invocation` — running twice doesn't
+  duplicate.
+- `test_errors_when_env_file_missing` — the .env-doesn't-exist error
+  path still errors at exit 1.
+
+**Workaround for pre-v0.3.14 installs** (no longer needed after
+upgrade):
+
+```bash
+cd <BERIL_ROOT>
+cat >> .env <<'EOF'
+
+# BERIL Atlas marker — managed by `beril-atlas configure`
+BERIL_ATLAS_CONFIGURED_AT=
+BERIL_ATLAS_CONFIGURED_VERSION=
+EOF
+beril-atlas configure
+```
+
 ## v0.3.13 — 2026-05-05 (cross-skill doc alignment)
 
 Doc-only follow-up to v0.3.12 that aligns atlas with the 2026-05-05
