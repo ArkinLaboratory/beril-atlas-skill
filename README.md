@@ -9,9 +9,9 @@ writeup grounded in the warehouse rows.
 **Status:** v0.3.12 (release candidate). Public repo. See
 [`CHANGELOG.md`](CHANGELOG.md) for the full history. One of four
 BERIL plug-in skills — see also
-[`beril-adversarial-skill`](https://github.com/ArkinLaboratory/beril-adversarial-skill),
-[`beril-paper-writer-skill`](https://github.com/ArkinLaboratory/beril-paper-writer-skill),
-and [`beril-presentation-maker-skill`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill).
+[`beril-adversarial-skill`](https://github.com/kbaseincubator/beril-adversarial-skill),
+[`beril-paper-writer-skill`](https://github.com/kbaseincubator/beril-paper-writer-skill),
+and [`beril-presentation-maker-skill`](https://github.com/kbaseincubator/beril-presentation-maker-skill).
 
 ## Install
 
@@ -202,7 +202,7 @@ Choose your `--outputs-root` accordingly: `latest` for the working loop,
 
 | Document | Audience | What it covers |
 | --- | --- | --- |
-| [`PARTICIPANT-RUNBOOK.md`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill/blob/main/docs/cross-skill/PARTICIPANT-RUNBOOK.md) (cross-skill) | New BERIL users | Prereqs, hub install, configure, and BERIL workflow integration across **all four skills** (atlas, adversarial, paper-writer, presentation-maker). Start here if you've never used the suite. |
+| [`PARTICIPANT-RUNBOOK.md`](https://github.com/kbaseincubator/beril-presentation-maker-skill/blob/main/docs/cross-skill/PARTICIPANT-RUNBOOK.md) (cross-skill) | New BERIL users | Prereqs, hub install, configure, and BERIL workflow integration across **all four skills** (atlas, adversarial, paper-writer, presentation-maker). Start here if you've never used the suite. |
 | [`TUTORIAL.md`](TUTORIAL.md) | Researchers + operators | Atlas-specific 10-step run-book: install, configure, first cold scan, reading the dashboard, daily use, ad-hoc SQL, acting on findings. |
 | [`PLUGIN_GUIDE.md`](PLUGIN_GUIDE.md) | Operators wanting depth | Comprehensive single-page reference for atlas — every CLI flag, every error class, all troubleshooting recipes. Per the 2026-05-05 inter-team agreement, `PLUGIN_GUIDE` is no longer the uniform pattern; this document is kept as atlas's comprehensive reference. |
 | [`CONFIGURE.md`](CONFIGURE.md) | Hub operators | Canonical spec for the `/beril-atlas-configure` slash command + CLI fallback. Provider selection, env-var template, smoke-test diagnostics. |
@@ -220,9 +220,9 @@ In-skill, after `beril-atlas install-skill <BERIL_ROOT>`:
 | `<BERIL>/.claude/skills/beril-atlas/references/what-we-capture.md` | Anyone wondering what L1 + L2 inventory | End-to-end inventory of what the scan captures. |
 
 Sibling BERIL plug-in skills:
-[`beril-adversarial-skill`](https://github.com/ArkinLaboratory/beril-adversarial-skill),
-[`beril-paper-writer-skill`](https://github.com/ArkinLaboratory/beril-paper-writer-skill),
-[`beril-presentation-maker-skill`](https://github.com/ArkinLaboratory/beril-presentation-maker-skill).
+[`beril-adversarial-skill`](https://github.com/kbaseincubator/beril-adversarial-skill),
+[`beril-paper-writer-skill`](https://github.com/kbaseincubator/beril-paper-writer-skill),
+[`beril-presentation-maker-skill`](https://github.com/kbaseincubator/beril-presentation-maker-skill).
 
 ## Troubleshooting
 
