@@ -34,7 +34,7 @@ and troubleshooting.
 > what databases the corpus actually depends on. Not a producer of
 > artifacts; a scanner that surfaces insight.
 
-> **Skill version.** This guide tracks `beril-atlas-skill v0.3.12`.
+> **Skill version.** This guide tracks `beril-atlas-skill v0.4.0`.
 > For the changelog, see [`CHANGELOG.md`](CHANGELOG.md). One of four
 > BERIL plug-in skills — see also
 > [`beril-adversarial-skill`](https://github.com/ArkinLaboratory/beril-adversarial-skill),
@@ -78,8 +78,8 @@ projects and surfaces what they collectively show.
 
 First operational scan: 2026-04-19 (Phase 2b cold scan, 5M tokens,
 ~45 minutes wall on a 50-project corpus with 8 worker threads). The
-skill ships at v0.3.12 (release-candidate hardening); see
-[`CHANGELOG.md`](CHANGELOG.md) for the full v0.1.0 → v0.3.12 trajectory.
+skill ships at v0.4.0 (release-candidate hardening); see
+[`CHANGELOG.md`](CHANGELOG.md) for the full v0.1.0 → v0.4.0 trajectory.
 
 **Position in the BERIL lifecycle:**
 
@@ -175,13 +175,13 @@ If you have a wheel file (e.g., from a release tag or a colleague's
 build):
 
 ```bash
-pipx install --force /path/to/beril_atlas_skill-0.3.12-py3-none-any.whl
+pipx install --force /path/to/beril_atlas_skill-0.4.0-py3-none-any.whl
 ```
 
 ### Verify the install
 
 ```bash
-beril-atlas --version    # should print "beril-atlas-skill 0.3.12"
+beril-atlas --version    # should print "beril-atlas-skill 0.4.0"
 beril-atlas --help       # lists subcommands: install-skill, configure,
                          # scan, metrics, render, fixture-regen
 ```
@@ -319,15 +319,17 @@ The configure flow checks:
 Run once after `beril-atlas install-skill .`, and any time provider
 credentials change. Walks through:
 
-1. **Provider selection.** v0.3.12 supports CBORG by default;
-   anthropic and google stubs exist but are not yet wired (see
-   [`CHANGELOG.md`](CHANGELOG.md) v0.2 follow-up notes).
+1. **Provider selection.** `ACTIVE_PROVIDER` ∈ `cborg` (default) or
+   `anthropic`. The standalone `google` provider stub was retired in
+   Round 2c (CRAFT-CONTRACT §3.4 alignment); Gemini is reached via the
+   `cborg` provider by pinning a CBORG-served Gemini model to a tier
+   (e.g. `MODEL_FAST=gemini-flash`).
 2. **API key entry.** Pasted into `BERIL_ROOT/.env` as
    `CBORG_API_KEY=...`. Never echoed back to the chat.
 3. **Smoke test.** A small LLM call against your provider to verify
    auth + model availability + latency.
 4. **Marker.** Writes `BERIL_ATLAS_CONFIGURED_AT=<ISO>` and
-   `BERIL_ATLAS_CONFIGURED_VERSION=0.3.12` into `.env` so subsequent
+   `BERIL_ATLAS_CONFIGURED_VERSION=0.4.0` into `.env` so subsequent
    runs know the install is verified.
 
 ### Default model + override
@@ -366,7 +368,7 @@ L2 extraction runs threaded (8 workers default; LLM calls are
 I/O-bound, the warehouse is serialized through a lock because DuckDB
 connections aren't thread-safe for concurrent writes). At 18s/section
 serial → ~6h cold scan; 8 workers → ~45 min. Override is not exposed
-as a CLI flag in v0.3.12; edit `_run_l2_extraction` if you need to
+as a CLI flag in v0.4.0; edit `_run_l2_extraction` if you need to
 tune (e.g., for a slower provider, drop to 4).
 
 ### Cache flags (v0.3.8)
@@ -402,7 +404,7 @@ Limit with:
   extractable sections. Useful for smoke tests or when you want to
   see how a partial scan looks before committing the full cost.
 
-There is **no `--include-projects` flag** in v0.3.12. To scan a
+There is **no `--include-projects` flag** in v0.4.0. To scan a
 single project, set up a temp workspace with a symlink and point
 `--projects-root` at it:
 
@@ -818,7 +820,7 @@ whatever is in the corpus today.
   print(con.execute("SELECT entity_kind, COUNT(*) FROM entity_mentions GROUP BY 1").fetchall())
   PY
   ```
-- **Other BERIL skills (potentially).** As of v0.3.12, no other
+- **Other BERIL skills (potentially).** As of v0.4.0, no other
   skill consumes atlas output. Plausible v0.4 integrations:
   paper-writer could query the warehouse for "prior similar
   projects" context; presentation-maker could query for
@@ -828,7 +830,7 @@ whatever is in the corpus today.
 
 Unlike the paper-writer ↔ adversarial relationship (which has a
 formal `CONTRACT.md` for the JSON-review schema), atlas has no
-downstream consumer with hard schema contracts in v0.3.12. The
+downstream consumer with hard schema contracts in v0.4.0. The
 warehouse schema is documented in `LAYOUT.md` and `references/
 design-note.md`; if a future consumer wires up against atlas, that
 contract would land here.
@@ -921,7 +923,7 @@ to the project's `RESEARCH_PLAN.md` or `REPORT.md`. See
 
 ### Section chunking warning: chunks have `finish_reason='length'`
 
-A chunk exceeded 64K output tokens. v0.3.12 doesn't expose
+A chunk exceeded 64K output tokens. v0.4.0 doesn't expose
 `--chunk-threshold-chars` as a CLI flag yet; if this happens
 routinely, edit `chunking.DEFAULT_CHUNK_THRESHOLD_CHARS` (default
 12_000) and rebuild. v0.3.13 will expose the flag. Diagnostic query:
@@ -987,7 +989,7 @@ without `--extract-limit` to get a balanced extraction.
 
 - **[`README.md`](README.md)** — repo overview, install + workflow
   quick-starts, sibling-skill cross-links.
-- **[`CHANGELOG.md`](CHANGELOG.md)** — full v0.1.0 → v0.3.12
+- **[`CHANGELOG.md`](CHANGELOG.md)** — full v0.1.0 → v0.4.0
   history; check this first when figuring out when a feature
   arrived.
 - **[`LAYOUT.md`](LAYOUT.md)** — package tree, CLI surface, path
@@ -1021,7 +1023,7 @@ without `--extract-limit` to get a balanced extraction.
 
 ## Document version
 
-This guide tracks `beril-atlas-skill v0.3.12`. Keep this header in
+This guide tracks `beril-atlas-skill v0.4.0`. Keep this header in
 sync with `pyproject.toml`'s version string when major changes ship.
 Update at every minor release; refresh examples and counts at every
 major.

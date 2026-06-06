@@ -180,7 +180,7 @@ Atlas configuration is in one of four states:
 #### `unconfigured`
 
 1. Announce: "Atlas is not yet configured for this BERIL install."
-2. `AskUserQuestion`: which provider? (CBORG / Anthropic / Google)
+2. `AskUserQuestion`: which provider? (CBORG / Anthropic)
 3. `AskUserQuestion`: confirm appending template block to `BERIL_ROOT/.env`.
 4. Append template (verbatim above, with `ACTIVE_PROVIDER` set to user's choice
    and the corresponding key-line uncommented).
@@ -364,7 +364,7 @@ Parse the JSON. Output shape:
   "beril_root": "/path/to/beril",
   "env_path": "/path/to/beril/.env",
   "state": "unconfigured | template-present | keys-present-unverified | configured",
-  "active_provider": "cborg | anthropic | google | null",
+  "active_provider": "cborg | anthropic | null",
   "missing_keys": ["CBORG_API_KEY"],
   "marker_timestamp": "2026-04-24T14:30:00Z | null",
   "marker_version": "0.1.0 | null",
@@ -494,7 +494,7 @@ standalone for scripted use.
   "beril_root": "/path/to/beril",
   "env_path": "/path/to/beril/.env",
   "state": "unconfigured | template-present | keys-present-unverified | configured",
-  "active_provider": "cborg | anthropic | google | null",
+  "active_provider": "cborg | anthropic | null",
   "missing_keys": ["CBORG_API_KEY"],
   "marker_timestamp": "2026-04-24T14:30:00Z | null",
   "marker_version": "0.1.0 | null",
@@ -547,7 +547,7 @@ For users who prefer CLI over the slash command, or for CI/automation:
 beril-atlas configure                            # interactive — runs the same state machine as the slash command, using terminal prompts
 beril-atlas configure --provider cborg --yes     # non-interactive — appends template if needed, prompts only for the key
 beril-atlas configure --smoke-test-only          # skip all editing, just verify and refresh marker
-beril-atlas configure --beril-root <path>        # explicit BERIL_ROOT
+beril-atlas configure <path>                     # explicit BERIL_ROOT (positional)
 ```
 
 This is a convenience wrapper around the leaf utilities. Kept because:

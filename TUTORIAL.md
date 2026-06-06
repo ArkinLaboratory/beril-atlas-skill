@@ -65,7 +65,7 @@ Verify:
 
 ```bash
 beril-atlas --version
-# beril-atlas-skill 0.3.12
+# beril-atlas-skill 0.4.0
 ```
 
 ### Install the skill into your BERIL deployment
@@ -101,7 +101,7 @@ Inside Claude Code at your BERIL root, run:
 
 This walks you through:
 
-1. **Provider selection.** v0.3.12 ships CBORG by default.
+1. **Provider selection.** v0.4.0 ships CBORG by default.
 2. **API key.** You paste your CBORG API key when prompted; it's
    appended to `BERIL_ROOT/.env` as `CBORG_API_KEY=...`. Never
    echoed back.

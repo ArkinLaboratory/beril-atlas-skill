@@ -6,7 +6,7 @@ skill pack, project corpus, and workspace memory; produces tabular exports,
 an interactive HTML dashboard, drift-review markdown, and a recommendations
 writeup grounded in the warehouse rows.
 
-**Status:** v0.3.12 (release candidate). Public repo. See
+**Status:** v0.4.0 (release candidate). Public repo. See
 [`CHANGELOG.md`](CHANGELOG.md) for the full history. One of four
 BERIL plug-in skills — see also
 [`beril-adversarial-skill`](https://github.com/kbaseincubator/beril-adversarial-skill),
@@ -52,8 +52,10 @@ Then inside Claude Code in that BERIL directory:
 /beril-atlas-configure
 ```
 
-This walks you through provider selection (CBORG default in v0.3.x; anthropic + google providers wired in v0.4), appends
-the atlas configuration template to `BERIL_ROOT/.env`, and runs a smoke
+This walks you through provider selection (`ACTIVE_PROVIDER` ∈ `cborg` (default) or
+`anthropic`; Gemini is reached via the `cborg` provider by pinning a CBORG-served Gemini
+model to a tier, per CRAFT-CONTRACT §3.4), appends the atlas configuration block to
+`BERIL_ROOT/.env` (additive — it never re-declares a key already there), and runs a smoke
 test against your provider.
 
 ## Workflows
@@ -208,7 +210,7 @@ Choose your `--outputs-root` accordingly: `latest` for the working loop,
 | [`CONFIGURE.md`](CONFIGURE.md) | Hub operators | Canonical spec for the `/beril-atlas-configure` slash command + CLI fallback. Provider selection, env-var template, smoke-test diagnostics. |
 | [`CONTRIBUTION.md`](CONTRIBUTION.md) | Vocab + methodology contributors | How to promote a vocab-local entry into vocab-shipped; leak-test checklist for friends submitting drift-review promotions. |
 | [`LAYOUT.md`](LAYOUT.md) | Package maintainers | Repository tree, CLI surface, path discovery, vocab overlay mechanics, cache-key shape, v0.2/v0.3 architectural evolution. |
-| [`CHANGELOG.md`](CHANGELOG.md) | Anyone tracking versions | Full v0.1.0 → v0.3.12 history. |
+| [`CHANGELOG.md`](CHANGELOG.md) | Anyone tracking versions | Full v0.1.0 → v0.4.0 history. |
 
 In-skill, after `beril-atlas install-skill <BERIL_ROOT>`:
 
