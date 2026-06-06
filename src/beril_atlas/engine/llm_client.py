@@ -2,13 +2,18 @@
 LLM client abstraction for the BERIL Atlas — multi-provider, JSON-aware.
 
 Provides a uniform `LLMClient` Protocol so extractors don't care which
-provider is active. Phase 2b ships:
+provider is active. Atlas ships:
   - CBORGClient — OpenAI-compatible API at https://api.cborg.lbl.gov/v1
                    (per memory: Claude-via-CBORG returns fenced JSON even
                    with response_format set; the JSON parser handles both)
   - AnthropicClient — direct Anthropic API (stub; wire up if ACTIVE_PROVIDER=anthropic)
-  - GoogleClient — direct Gemini API (stub; wire up if ACTIVE_PROVIDER=google)
   - MockLLMClient — deterministic test double; never hits the network
+
+CRAFT-CONTRACT §3.4 / Round 2c: the GoogleClient stub (PROVIDER_GOOGLE)
+was retired. Atlas users wanting Gemini today reach it through the
+`cborg` provider by pinning a CBORG-served Gemini model id (e.g.
+`MODEL_FAST=gemini-flash`) — no separate client, no stub. A direct
+Google AI Studio backend is a future own-client extension, not v1.
 
 All clients return ChatResponse with the same shape. JSON-mode requests
 go through `chat_json()` which extracts JSON whether the model returned
@@ -229,25 +234,6 @@ class AnthropicClient:
 
 
 # --------------------------------------------------------------------------
-# Google client — stub
-# --------------------------------------------------------------------------
-
-class GoogleClient:
-    """Google Gen AI / Gemini client. Stub until ACTIVE_PROVIDER=google is set."""
-
-    def __init__(self, config: llm_config.LLMConfig):
-        if config.provider != llm_config.PROVIDER_GOOGLE:
-            raise ValueError(f"GoogleClient requires provider=google, got {config.provider}")
-        self.config = config
-
-    def chat(self, messages, *, model=None, max_tokens=None, temperature=None, response_format=None):
-        raise NotImplementedError(
-            "GoogleClient not yet implemented. Set ACTIVE_PROVIDER=cborg or "
-            "implement the Google Gen AI SDK adapter when ready."
-        )
-
-
-# --------------------------------------------------------------------------
 # Mock client — deterministic test double
 # --------------------------------------------------------------------------
 
@@ -314,6 +300,4 @@ def build_client(config: Optional[llm_config.LLMConfig] = None) -> LLMClient:
         return CBORGClient(config)
     if config.provider == llm_config.PROVIDER_ANTHROPIC:
         return AnthropicClient(config)
-    if config.provider == llm_config.PROVIDER_GOOGLE:
-        return GoogleClient(config)
     raise ValueError(f"No client implementation for provider: {config.provider}")
