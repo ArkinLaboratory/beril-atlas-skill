@@ -39,6 +39,7 @@ Thumbs.db
 **/.claude/skills/beril-atlas/state/
 **/.claude/skills/beril-atlas/vocab-local/
 **/.claude/skills/beril-atlas/contrib/
+.commit-message*.txt
 
 # Local .env files (defensive; shipped repo doesn't have one)
 .env
@@ -46,3 +47,4 @@ Thumbs.db
 
 # Ruff cache
 .ruff_cache/
+.commit-message*.txt
