@@ -40,7 +40,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
             "slash command."
         ),
     )
-    p.add_argument("--beril-root", help="Explicit BERIL_ROOT.")
+    p.add_argument(
+        "beril_root",
+        nargs="?",
+        default=None,
+        help="BERIL_ROOT (default: discovery walk-up).",
+    )
     p.add_argument(
         "--provider",
         # CRAFT-CONTRACT §3.4 / Round 2c: cborg is the supported app-internal
