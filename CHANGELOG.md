@@ -2,6 +2,92 @@
 
 All shipped versions of `beril-atlas-skill`. Latest first.
 
+## v0.4.0 — 2026-06-06 (CRAFT §3.4 config conformance)
+
+**Coordinated with the CRAFT release** (CRAFT v0.3.0; adversarial
+v0.7.1, paper-writer v1.1.0, presentation-maker v1.1.0). Atlas is a
+separate product (ArkinLaboratory; not a CRAFT submodule) and ships
+on its own cadence, but it shares the BERIL deployment's `.env` with
+the CRAFT skills — so it must conform to the same additive-only
+shape. Round 2c (2026-06-06) is the alignment work; this release
+ships it.
+
+**Tag jump (v0.1.3 → v0.4.0).** The published-tag series stopped at
+**v0.1.3** even though `pyproject.toml` continued to bump (v0.3.0 →
+v0.3.14). v0.4.0 is the first tag after that gap. **No intermediate
+tags are being backfilled** — the in-tree v0.2.x / v0.3.x entries
+below are the historical record; the unified release artifact is
+v0.4.0. Per Adam's decision 2026-06-06: tag forward, document the
+jump, don't rewrite the past.
+
+**What's new (CRAFT §3.4 alignment, Round 2c + Stage 6/7):**
+
+- **Canonical CRAFT resolver in the package root.** The verbatim
+  `llm_config.py` resolver from the CRAFT skills is now at
+  `src/beril_atlas/llm_config.py` (`infer_provider`,
+  `resolve_tier_models`, `parse_env_text`, `pick_tier`,
+  `TIER_FAMILY`, `ConfigError`, plus the Stage-6
+  `app_internal_base_url`). Atlas's `engine/llm_config.py` delegates
+  to this canonical module while keeping the atlas-facing surface
+  (`LLMConfig` dataclass, `load_atlas_config`) byte-stable for
+  callers. CRAFT's cross-skill conformance fixture enforces no-drift
+  on the canonical functions across the 3 CRAFT skills; atlas's copy
+  is verified by a manual diff + atlas's own tests (NOT added to
+  CRAFT's fixture — CRAFT §3.4 conformance-boundary clause).
+- **Additive-only `.env`.** `commands/_env_compose.py` implements
+  the sentinel-aware, existence-aware compose: shared CRAFT block +
+  per-skill marker appended idempotently; existing keys (credentials,
+  tier pins) are **never re-declared** — re-declaration would shadow
+  values BERIL and the CRAFT skills already set.
+  `commands/template_env.py` is the additive-only template.
+- **Provider abstraction (cborg + anthropic).** The `google`
+  provider stub was retired (Round 2c). Gemini is reachable today
+  via `ACTIVE_PROVIDER=cborg` + a CBORG-served Gemini model id
+  pinned to `MODEL_FAST` or `DEFAULT_MODEL` — no separate stub
+  client. A direct Google AI Studio backend is a future own-client
+  extension, not v1.
+- **Three tier env vars.** `MODEL_REASONING` / `MODEL_STANDARD` /
+  `MODEL_FAST` replace the dormant `ANNOTATION_MODEL` /
+  `TOURNAMENT_MODEL` env vars (no live code path consumed them).
+  Atlas's live `default_model` maps to **standard**; intended future
+  mapping documented for tournament-/annotation-stage hooks.
+- **`app_internal_base_url()` consumer migration (Stage 6).**
+  `engine/llm_config.load_atlas_config` now resolves the CBORG base
+  URL via the canonical `_canonical.app_internal_base_url(env_map)`
+  helper — symmetric `/v1`-keeping sibling of `bare_host`. A user
+  who sets `CBORG_BASE_URL` to the bare host no longer silently
+  404s on atlas's app-internal LLM call; the helper appends `/v1`.
+
+**Preserved.** `LLMConfig` dataclass surface (api_key masked in
+repr/str; `daily_budget_usd` cap; `default_temperature` /
+`default_max_tokens` extractor defaults). `engine/llm_client.py`
+CBORG + Anthropic clients + MockLLMClient. `commands/smoke_test.py`
+response-asserting validation (already exactly the shape CRAFT §3.4
+requires). `mark_configured` idempotent-append behavior. The
+`/beril-atlas-configure` slash-command surface (state machine,
+AskUserQuestion prompts).
+
+**Docs (in this branch).** `CONFIGURE.md` env-var table + template
+section rewritten to the additive-only CRAFT shape;
+`skills/beril-atlas-configure/SKILL.md` updated for the new flow.
+LAYOUT.md adds `src/beril_atlas/llm_config.py` +
+`src/beril_atlas/commands/_env_compose.py` to the module map.
+Narrative docs (`README.md`, `TUTORIAL.md`, `PLUGIN_GUIDE.md`) are
+the production team's pass.
+
+**Verification.** Atlas's own test suite: ≥201 passed (159 baseline
+v0.3.14 + 31 in `test_llm_config_canonical.py` /
+`test_env_compose_additive_only.py` from Round 2c + 11 more from
+Stage 6's `app_internal_base_url`). Atlas conformance is verified
+in **atlas's own suite**, NOT in CRAFT's Stage-6 cross-skill
+conformance fixture (CRAFT §3.4 conformance-boundary clause).
+
+**References.** `handoffs/CRAFT-config-round2c-atlas-brief.md` —
+Round 2c (the alignment work);
+`handoffs/CRAFT-config-stage6-CC-brief.md` — Stage 6 mechanics
+(`app_internal_base_url` + engine-consumer migration);
+`handoffs/CRAFT-config-stage7-CC-brief.md` — Stage 7 release brief.
+
 ## v0.3.14 — 2026-05-05 (mark_configured idempotency hotfix)
 
 Caught 2026-05-05 on Adam's `spike/beril-extended` hub. `.env` had

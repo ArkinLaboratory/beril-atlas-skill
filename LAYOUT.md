@@ -32,16 +32,32 @@ ArkinLaboratory/beril-atlas-skill/
 ├── .gitattributes                # line-ending hygiene (Windows friends)
 ├── src/
 │   └── beril_atlas/
-│       ├── __init__.py             # exports __version__ = "0.3.12"
+│       ├── __init__.py             # exports __version__ = "0.4.0"
 │       ├── cli.py                  # argparse entry point, subcommand dispatch
 │       ├── discovery.py            # BERIL_ROOT + skill-dir resolution
+│       ├── llm_config.py           # canonical CRAFT runtime-config resolver
+│       │                           # (v0.4.0 / CRAFT §3.4) — verbatim copy of
+│       │                           # the same file used by the 3 CRAFT skills:
+│       │                           # infer_provider, resolve_tier_models,
+│       │                           # bare_host, app_internal_base_url (Stage 6),
+│       │                           # pick_newest, pick_tier, TIER_FAMILY.
+│       │                           # engine/llm_config.load_atlas_config
+│       │                           # delegates here.
 │       ├── commands/
 │       │   ├── __init__.py
 │       │   ├── install_skill.py    # walks skills/*/ → .claude/skills/<name>/
 │       │   ├── configure.py        # CLI fallback for /beril-atlas-configure
 │       │   ├── config_status.py    # state machine inspector
 │       │   ├── smoke_test.py       # advisory LLM ping
-│       │   ├── template_env.py     # writes .env template
+│       │   ├── template_env.py     # writes additive-only .env template
+│       │   │                       # (v0.4.0 / CRAFT §3.4): shared sentinel
+│       │   │                       # block + per-skill marker; no credentials.
+│       │   ├── _env_compose.py     # additive-only .env compose helper
+│       │   │                       # (v0.4.0 / CRAFT §3.4): sentinel-aware,
+│       │   │                       # existence-aware filter that drops KEY=
+│       │   │                       # lines whose KEY is already in user .env.
+│       │   │                       # Hosts parse_env_text (inline-comment
+│       │   │                       # stripping; byte-identical to the canary).
 │       │   └── mark_configured.py  # state-machine transition helper
 │       ├── engine/                 # Python core (was scripts/atlas_lib/)
 │       │   ├── __init__.py
