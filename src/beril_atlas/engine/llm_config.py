@@ -226,11 +226,12 @@ def load_atlas_config(env_path: Optional[Path] = None) -> LLMConfig:
     # Credential lookup uses the SAME env map the canonical resolver does.
     if provider == PROVIDER_CBORG:
         api_key = env_map.get("CBORG_API_KEY", "").strip()
-        # APP-INTERNAL CBORG client KEEPS /v1 (OpenAI-style endpoint).
-        # Never call `_canonical.bare_host()` — that strips /v1 for the
-        # claude -p path. The default below is the same the canonical
-        # resolver uses for its bare-host derivation.
-        base_url = env_map.get("CBORG_BASE_URL", "").strip() or "https://api.cborg.lbl.gov/v1"
+        # APP-INTERNAL CBORG client KEEPS /v1 (OpenAI-style endpoint). Use the
+        # canonical symmetric helper — `app_internal_base_url` == bare_host + /v1,
+        # the /v1-keeping sibling of `bare_host` (CRAFT-CONTRACT §3.4). If the
+        # user wrote the bare host in CBORG_BASE_URL the helper appends /v1; if
+        # they wrote the /v1 form the helper keeps it idempotent.
+        base_url = _canonical.app_internal_base_url(env_map)
         if not api_key:
             raise ValueError("CBORG_API_KEY missing in environment")
     elif provider == PROVIDER_ANTHROPIC:

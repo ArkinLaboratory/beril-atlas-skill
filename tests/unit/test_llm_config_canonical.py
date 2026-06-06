@@ -96,6 +96,67 @@ def test_parse_env_text_strips_inline_comments():
 
 
 # ---------------------------------------------------------------------------
+# Canonical app_internal_base_url helper (CRAFT-CONTRACT §3.4 / Stage 6)
+# ---------------------------------------------------------------------------
+# Symmetric /v1-keeping sibling of bare_host. Atlas's engine consumer
+# routes through it (since the Stage-6 migration); these tests cover the
+# helper's pure behavior at the canonical-module level.
+
+
+def test_app_internal_base_url_keeps_v1_form():
+    from beril_atlas import llm_config as canonical
+
+    assert (
+        canonical.app_internal_base_url({"CBORG_BASE_URL": "https://api.cborg.lbl.gov/v1"})
+        == "https://api.cborg.lbl.gov/v1"
+    )
+
+
+def test_app_internal_base_url_bare_host_input_gets_v1():
+    from beril_atlas import llm_config as canonical
+
+    # The bugfix case: user set bare host → app-internal call would have
+    # hit a /v1-less endpoint and 404'd. Helper appends /v1.
+    assert (
+        canonical.app_internal_base_url({"CBORG_BASE_URL": "https://api.cborg.lbl.gov"})
+        == "https://api.cborg.lbl.gov/v1"
+    )
+
+
+def test_app_internal_base_url_trailing_slash_normalized():
+    from beril_atlas import llm_config as canonical
+
+    assert (
+        canonical.app_internal_base_url({"CBORG_BASE_URL": "https://api.cborg.lbl.gov/v1/"})
+        == "https://api.cborg.lbl.gov/v1"
+    )
+
+
+def test_app_internal_base_url_default():
+    from beril_atlas import llm_config as canonical
+
+    assert canonical.app_internal_base_url({}) == canonical.CBORG_BARE_HOST + "/v1"
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},
+        {"CBORG_BASE_URL": "https://api.cborg.lbl.gov"},
+        {"CBORG_BASE_URL": "https://api.cborg.lbl.gov/v1"},
+        {"CBORG_BASE_URL": "https://api.cborg.lbl.gov/v1/"},
+        {"CBORG_BASE_URL": "https://proxy.example.com/cborg"},
+        {"CBORG_BASE_URL": "https://proxy.example.com/cborg/v1"},
+    ],
+)
+def test_app_internal_base_url_equals_bare_host_plus_v1(env):
+    """Invariant: app_internal_base_url(env) == bare_host(env) + '/v1'."""
+    from beril_atlas import llm_config as canonical
+
+    assert canonical.app_internal_base_url(env) == canonical.bare_host(env) + "/v1"
+
+
+# ---------------------------------------------------------------------------
 # engine/llm_config.load_atlas_config delegation
 # ---------------------------------------------------------------------------
 
@@ -125,7 +186,8 @@ def test_load_atlas_config_rejects_google(monkeypatch, tmp_path):
 
 def test_load_atlas_config_cborg_base_url_keeps_v1(monkeypatch, tmp_path):
     """The app-internal CBORG client KEEPS `/v1` in CBORG_BASE_URL.
-    Atlas never calls `bare_host()` (which strips `/v1` for claude -p)."""
+    Atlas routes through `_canonical.app_internal_base_url` (added in
+    Stage 6), the symmetric /v1-keeping sibling of `bare_host`."""
     monkeypatch.setattr("beril_atlas.engine.llm_config._load_dotenv", None)
     monkeypatch.setenv("ACTIVE_PROVIDER", "cborg")
     monkeypatch.setenv("CBORG_API_KEY", "fake")
@@ -145,6 +207,21 @@ def test_load_atlas_config_cborg_base_url_user_override(monkeypatch, tmp_path):
     mod = _fresh_engine_config()
     cfg = mod.load_atlas_config(env_path=tmp_path / "missing.env")
     assert cfg.base_url == "https://proxy.example.com/cborg/v1"
+
+
+def test_load_atlas_config_cborg_bare_host_input_gets_v1(monkeypatch, tmp_path):
+    """CRAFT-CONTRACT §3.4 / Stage 6 bugfix: if the user sets
+    CBORG_BASE_URL to the BARE host (no `/v1`), atlas's app-internal
+    client now routes through `_canonical.app_internal_base_url`, which
+    appends `/v1`. Pre-Stage-6 atlas read CBORG_BASE_URL raw and would
+    silently 404 on the OpenAI-style call."""
+    monkeypatch.setattr("beril_atlas.engine.llm_config._load_dotenv", None)
+    monkeypatch.setenv("ACTIVE_PROVIDER", "cborg")
+    monkeypatch.setenv("CBORG_API_KEY", "fake")
+    monkeypatch.setenv("CBORG_BASE_URL", "https://api.cborg.lbl.gov")
+    mod = _fresh_engine_config()
+    cfg = mod.load_atlas_config(env_path=tmp_path / "missing.env")
+    assert cfg.base_url == "https://api.cborg.lbl.gov/v1"
 
 
 def test_load_atlas_config_tier_pins_flow_through(monkeypatch, tmp_path):

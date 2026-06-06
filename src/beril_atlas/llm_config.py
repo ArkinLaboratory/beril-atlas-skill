@@ -99,6 +99,19 @@ def bare_host(env: dict[str, str]) -> str:
     return re.sub(r"/v1/?$", "", raw.rstrip("/"))
 
 
+def app_internal_base_url(env: dict[str, str]) -> str:
+    """OpenAI-style CBORG base URL for app-internal clients (KEEPS `/v1`).
+
+    Symmetric with `bare_host`: both derive from the one user-facing
+    `CBORG_BASE_URL`, so the app-internal client (OpenAI-style, needs `/v1`)
+    and `claude -p` (Anthropic-style, needs the bare host) can never disagree.
+    Defined as `bare_host(env) + "/v1"`, so a user who writes EITHER the bare
+    host OR the `/v1` form gets exactly one `/v1` for app-internal calls.
+    CRAFT-CONTRACT §3.4 ("the base URL differs by client").
+    """
+    return bare_host(env) + "/v1"
+
+
 def _version_key(model_id: str) -> tuple:
     """Sort key from trailing version digits, e.g. claude-opus-4-8 -> (4, 8)."""
     nums = re.findall(r"\d+", model_id)
