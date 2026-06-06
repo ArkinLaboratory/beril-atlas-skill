@@ -26,88 +26,139 @@ as an overlay below `.env`.
 `~/.beril-atlas/config.yaml` from LAYOUT.md's path discovery section. The only
 user-level dir we still need is `~/.beril-atlas/runs/` for scan outputs.
 
+## CRAFT-CONTRACT §3.4 alignment (Round 2c)
+
+**Status (updated 2026-06-06):** atlas's config is now aligned to the
+**CRAFT runtime-config contract v2** (`craft-platform/CRAFT-CONTRACT.md
+§3.4`) so it coexists with the three CRAFT skills (beril-adversarial,
+beril-paper-writer, beril-presentation-maker) on a shared BERIL `.env`
+without shadowing keys.
+
+Atlas is NOT a CRAFT submodule (stays at ArkinLaboratory; releases on
+its own). The alignment is **coexistence + consistency**, not a CRAFT
+release item.
+
+Key shape changes versus the v0.3.14 template:
+
+  - **Additive-only `.env`.** Atlas's `template-env` block is now a
+    sentinel-delimited shared CRAFT block (provider + 3 model tiers)
+    plus atlas's per-skill marker. The compose step is existence-aware
+    and NEVER re-declares a key the user's `.env` already has — see
+    `commands/_env_compose.py::compose_env_append`.
+  - **Provider set narrowed to `cborg` + `anthropic`.** The `google`
+    stub (PROVIDER_GOOGLE / GoogleClient) was retired. Atlas users
+    wanting Gemini reach it through the `cborg` provider by pinning a
+    CBORG-served Gemini model id to a tier (e.g.
+    `MODEL_FAST=gemini-flash`). A direct Google AI Studio backend is a
+    future own-client extension, not v1.
+  - **3-tier model resolution.** `MODEL_REASONING` / `MODEL_STANDARD`
+    / `MODEL_FAST` replace the dormant `ANNOTATION_MODEL` /
+    `TOURNAMENT_MODEL` env vars. Atlas's tier mapping (intended;
+    consumers wire as those stages land):
+      - default extraction → standard tier
+      - annotation stage (future) → fast tier
+      - tournament / Elo (future) → reasoning tier
+  - **`CBORG_BASE_URL` keeps `/v1`.** Atlas's OpenAI-style client reads
+    it directly. Atlas does NOT use `claude -p`, so the contract's
+    `bare_host` helper (which strips `/v1`) is not invoked, and atlas
+    writes NO `<BERIL_ROOT>/.claude/settings.json`.
+  - **Inline-comment stripping.** `_env_compose.parse_env_text` is
+    byte-identical to the canary's helper (whitespace-preceded `#`
+    opens a trailing comment).
+
 ## Atlas environment variables (canonical list)
 
-Current authoritative source: `scripts/atlas_lib/llm_config.py`
-lines 101–153. Preserving exactly:
+Authoritative source: `src/beril_atlas/llm_config.py` (canonical CRAFT
+resolver, copied verbatim from beril-paper-writer main) +
+`src/beril_atlas/engine/llm_config.py` (atlas client config delegating
+to the canonical resolver).
 
 | Variable | Required when | Default if unset | Notes |
 | --- | --- | --- | --- |
-| `ACTIVE_PROVIDER` | always | `cborg` | one of `cborg`, `anthropic`, `google` |
-| `CBORG_API_KEY` | provider=cborg | — | required |
-| `CBORG_BASE_URL` | — | `https://api.cborg.lbl.gov/v1` | override for dev/test |
-| `ANTHROPIC_API_KEY` | provider=anthropic | — | required |
+| `ACTIVE_PROVIDER` | always | `cborg` | one of `cborg`, `anthropic` (`google` dropped Round 2c; `subscription` rejected by atlas — no `claude -p`) |
+| `CBORG_API_KEY` | provider=cborg | — | required; READ from existing `.env`, never re-declared |
+| `CBORG_BASE_URL` | — | `https://api.cborg.lbl.gov/v1` | atlas keeps `/v1` (app-internal OpenAI-style); override for dev/proxy |
+| `ANTHROPIC_API_KEY` | provider=anthropic | — | required; READ from existing `.env` |
 | `ANTHROPIC_BASE_URL` | — | Anthropic SDK default | rarely overridden |
-| `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | provider=google | — | prefer GEMINI_API_KEY |
-| `GOOGLE_BASE_URL` | — | SDK default | rarely overridden |
-| `DEFAULT_MODEL` | — | provider-fallback | see provider defaults below |
-| `ANNOTATION_MODEL` | — | = DEFAULT_MODEL | optional per-role override |
-| `TOURNAMENT_MODEL` | — | = DEFAULT_MODEL | optional per-role override |
-| `DAILY_BUDGET_USD` | — | none (no cap) | optional float |
+| `MODEL_REASONING` | — | — | reasoning-tier pin (future: tournament / Elo) |
+| `MODEL_STANDARD` | — | — | standard-tier pin (atlas's `default_model` falls back here if set, else provider literal) |
+| `MODEL_FAST` | — | — | fast-tier pin (future: annotation stage) |
+| `DEFAULT_MODEL` | — | `MODEL_STANDARD` else provider literal | atlas's primary model knob today |
+| `DAILY_BUDGET_USD` | — | none (no cap) | optional float; atlas-specific |
 | `BERIL_ATLAS_CONFIGURED_AT` | — | — | written by configure on success |
+| `BERIL_ATLAS_CONFIGURED_VERSION` | — | — | written by configure on success |
 
 ### Per-provider default model fallbacks
 
-| Provider | Default model if DEFAULT_MODEL unset |
+| Provider | Default model if DEFAULT_MODEL and MODEL_STANDARD both unset |
 | --- | --- |
 | `cborg` | `anthropic/claude-sonnet` |
 | `anthropic` | `claude-sonnet-4-5` (bump as new models ship; config schema tracks model id in .env) |
-| `google` | `gemini-2.0-flash-exp` |
+
+(The `google` row was removed in Round 2c; Gemini users pin a
+CBORG-served Gemini model id via `cborg`.)
 
 ## .env template appended on first configure
 
-`/beril-atlas-configure` (and `beril-atlas configure`) offers to append the
-following block to `BERIL_ROOT/.env` if no `BERIL_ATLAS_*` keys are present.
-User confirms before anything is written. Block is appended at the end of
-`.env`, preserving existing content verbatim.
+`/beril-atlas-configure` (and `beril-atlas configure`) **idempotently**
+appends the CRAFT shared block + atlas's per-skill marker to
+`BERIL_ROOT/.env`. The compose step:
+
+  - Detects the `# >>> CRAFT shared config` sentinel and SKIPS the
+    shared block if another CRAFT skill already wrote it.
+  - Detects atlas's per-skill marker and SKIPS the whole append if
+    both blocks are already present (idempotent no-op).
+  - Drops any `KEY=...` line from the appended block whose `KEY` is
+    already present in the user's `.env` (the additive-only contract
+    — NEVER re-declares a credential or tier pin the user already set).
+
+Block produced by `beril-atlas template-env`:
 
 ```ini
-# ============================================================
-# BERIL Atlas (beril-atlas-skill) configuration
-# Appended by `/beril-atlas-configure` on YYYY-MM-DDTHH:MM:SSZ.
-# Docs: https://github.com/ArkinLaboratory/beril-atlas-skill
-#
-# After editing any value below, re-run `/beril-atlas-configure`
-# in Claude Code to verify and update the CONFIGURED_AT marker.
-# ============================================================
+# >>> CRAFT shared config (written once; shared by all CRAFT skills) >>>
+# Edit values here, then re-run any skill's `configure` to regenerate
+# <BERIL_ROOT>/.claude/settings.json. See CRAFT-CONTRACT.md §3.4.
 
-# Active provider — v0.1 supports `cborg` only.
-# `anthropic` and `google` entries below are reserved for v0.2
-# and not currently usable.
+# Reasoning provider — routes BOTH `claude -p` and app-internal calls.
+# One of:
+#   anthropic     your own Anthropic Platform key (works anywhere, off-network)
+#   cborg         LBL CBORG gateway (needs LBL network/VPN locally; free on the Hub)
+#   subscription  ambient Claude Code login (capped by the monthly Agent SDK credit)
 ACTIVE_PROVIDER=cborg
 
-# CBORG (LBNL internal)
-CBORG_API_KEY=                              # <-- paste your CBORG key here
-CBORG_BASE_URL=https://api.cborg.lbl.gov/v1
+# CRAFT READS the provider credentials already present in this .env — it does
+# NOT re-declare them. cborg uses CBORG_API_KEY (+ CBORG_BASE_URL); anthropic
+# uses ANTHROPIC_API_KEY. If a needed key is missing, `configure` fails loud
+# and names which one to add. `claude -p` uses the BARE host (configure strips
+# /v1).
 
-# --- Reserved for v0.2 (not active in v0.1) ---
-# Anthropic direct — uncomment AND set ACTIVE_PROVIDER=anthropic when wired up.
-# ANTHROPIC_API_KEY=
+# Model tiers. Leave BLANK → `configure` discovers the newest model available
+# on your provider per tier and pins it here. Set a value to pin your own
+# choice. reasoning = hard/unrecoverable work; fast = mechanical.
+MODEL_REASONING=
+MODEL_STANDARD=
+MODEL_FAST=
+# <<< CRAFT shared config <<<
+
+# --- beril-atlas-skill (per-skill) ---
+# Atlas tier mapping (Round 2c):
+#   default extraction → standard tier (MODEL_STANDARD)
+#   annotation stage (future) → fast tier (MODEL_FAST)
+#   tournament / Elo (future) → reasoning tier (MODEL_REASONING)
 #
-# Google Gemini — uncomment AND set ACTIVE_PROVIDER=google when wired up.
-# GEMINI_API_KEY=
-# ----------------------------------------------
-
-# Model selection — provider-default used if unset
-DEFAULT_MODEL=anthropic/claude-sonnet
-
-# Optional per-role overrides — unset = use DEFAULT_MODEL
-# ANNOTATION_MODEL=
-# TOURNAMENT_MODEL=
-
-# Optional budget cap in USD per day — unset = no cap
+# Optional: cap atlas's total LLM spend per day. Unset = no cap.
 # DAILY_BUDGET_USD=10.00
+#
+# Optional: pin a specific default model id. Useful for reproducibility.
+# DEFAULT_MODEL=
 
-# Written by `/beril-atlas-configure` on successful smoke test.
-# Do not edit by hand. Re-run configure to refresh.
 BERIL_ATLAS_CONFIGURED_AT=
 BERIL_ATLAS_CONFIGURED_VERSION=
 ```
 
 Design notes:
-- All three providers shown in one block so user sees the full menu.
-- Only one provider is active per `.env`. Users switch by changing
-  `ACTIVE_PROVIDER` and (un)commenting the corresponding key.
+- Credentials are READ from the existing `.env`, NEVER re-declared.
+  Re-declaring shadows the BERIL/CRAFT keys via last-write-wins.
 - `BERIL_ATLAS_CONFIGURED_AT` is the completion marker; empty means
   "never configured or needs re-verification."
 

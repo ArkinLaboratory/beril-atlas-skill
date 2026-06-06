@@ -8,6 +8,11 @@ Reads BERIL_ROOT/.env and classifies the state as one of:
 
 Output: `--json` emits machine-readable state for the slash command to parse.
 Default output is human-readable.
+
+CRAFT-CONTRACT §3.4 / Round 2c: providers narrowed to `cborg` + `anthropic`
+(google stub retired — Gemini reached via cborg-pin). The inline-comment
+discipline of the local `_parse_env` matches `parse_env_text` in the
+canonical resolver (whitespace-preceded `#` opens a trailing comment).
 """
 
 from __future__ import annotations
@@ -29,11 +34,16 @@ STATE_KEYS_PRESENT_UNVERIFIED = "keys-present-unverified"
 STATE_CONFIGURED = "configured"
 
 
-# Required key(s) per provider
+# Required key(s) per provider.
+#
+# CRAFT-CONTRACT §3.4 / Round 2c: the `google` entry was dropped along
+# with the GoogleClient stub. Atlas users wanting Gemini reach it through
+# the `cborg` provider by pinning a CBORG-served Gemini model id to a
+# tier (e.g. `MODEL_FAST=gemini-flash`). A direct Google AI Studio
+# backend is a future own-client extension, not v1.
 REQUIRED_KEYS = {
     "cborg": ["CBORG_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY"],  # v0.2 hook
-    "google": ["GEMINI_API_KEY"],  # v0.2 hook; GOOGLE_API_KEY also accepted
 }
 
 
@@ -100,10 +110,6 @@ def run(args: argparse.Namespace) -> int:
         else:
             req_keys = REQUIRED_KEYS.get(active_provider, [])
             missing = [k for k in req_keys if not env_map.get(k)]
-            # Google: GEMINI_API_KEY OR GOOGLE_API_KEY accepted
-            if active_provider == "google":
-                if env_map.get("GEMINI_API_KEY") or env_map.get("GOOGLE_API_KEY"):
-                    missing = []
             if missing:
                 state = STATE_TEMPLATE_PRESENT
             elif not marker_ts:

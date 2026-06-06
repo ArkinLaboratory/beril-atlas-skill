@@ -43,7 +43,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     p.add_argument("--beril-root", help="Explicit BERIL_ROOT.")
     p.add_argument(
         "--provider",
-        choices=["cborg"],  # v0.1: CBORG only; anthropic/google in v0.2
+        # CRAFT-CONTRACT §3.4 / Round 2c: cborg is the supported app-internal
+        # provider in v1; anthropic is a v0.2 hook. The `google` stub was
+        # retired (Gemini reachable via cborg by pinning a CBORG-served
+        # Gemini model id to a tier).
+        choices=["cborg"],
         help="Non-interactive: pick provider without prompting.",
     )
     p.add_argument(
@@ -141,8 +145,11 @@ def _handle_unconfigured(beril_root: Path, args: argparse.Namespace) -> int:
     if args.provider:
         provider = args.provider
     else:
-        print("v0.1 supports only the `cborg` provider.")
-        print("(anthropic and google are reserved for v0.2.)")
+        # CRAFT-CONTRACT §3.4 / Round 2c: cborg is the supported app-internal
+        # provider; anthropic is a v0.2 hook; google was retired.
+        print("Atlas supports the `cborg` provider in v1 (anthropic is a v0.2 hook).")
+        print("For Gemini, set ACTIVE_PROVIDER=cborg and pin a CBORG-served")
+        print("Gemini model id to MODEL_FAST or DEFAULT_MODEL.")
         provider = "cborg"
 
     env_path = discovery.get_env_path(beril_root)
@@ -159,11 +166,32 @@ def _handle_unconfigured(beril_root: Path, args: argparse.Namespace) -> int:
             )
             return 0
 
-    template = te_cmd.ENV_TEMPLATE
+    # CRAFT-CONTRACT §3.4 / Round 2c (additive-only): compose the block
+    # via the canonical existence-aware path so we (a) skip the shared
+    # CRAFT block entirely if another CRAFT skill already wrote the
+    # `# >>> CRAFT shared config` sentinel, and (b) drop any KEY=...
+    # line whose KEY is already present in the user's .env. This
+    # prevents atlas from shadowing credentials (CBORG_API_KEY,
+    # CBORG_BASE_URL, ANTHROPIC_API_KEY, ...) that BERIL and the CRAFT
+    # skills set earlier.
+    from beril_atlas.commands._env_compose import compose_env_append
+
     existing = env_path.read_text(encoding="utf-8")
-    if not existing.endswith("\n"):
-        existing += "\n"
-    new_text = existing + "\n" + template
+    append_text = compose_env_append(existing)
+    if not append_text:
+        # Idempotent no-op — shared block + per-skill marker already present.
+        print(
+            f".env already carries the CRAFT shared block and atlas's "
+            f"per-skill marker (no change to {env_path})."
+        )
+        print(
+            f"Next step: ensure your provider credentials (CBORG_API_KEY, "
+            f"or ANTHROPIC_API_KEY) are present in {env_path}, then re-run "
+            f"`beril-atlas configure`."
+        )
+        return 0
+    suffix = "" if existing.endswith("\n") or existing == "" else "\n"
+    new_text = existing + suffix + append_text
     env_path.write_text(new_text, encoding="utf-8")
     print(f"Template appended to {env_path}.")
     print(f"")
